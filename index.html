@@ -1,0 +1,2206 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ARENA - SÀN THỂ THAO</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  body { margin: 0; }
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/plain" id="app-source">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+// ============================================================
+// DESIGN TOKENS — lấy cảm hứng từ sân cầu lông: xanh sân, gỗ sàn, vạch vôi
+// ============================================================
+const C = {
+  court: "#1B4332",
+  courtDeep: "#0D2818",
+  courtLight: "#2D6A4F",
+  floor: "#C9A66B",
+  floorLight: "#F3E9D2",
+  cream: "#FBF8F1",
+  ink: "#13261C",
+  amber: "#E0972E",
+  amberDeep: "#B5741E",
+  danger: "#B3492F",
+  dangerBg: "#F7E4DE",
+  ok: "#2F7A52",
+  okBg: "#E3F0E7",
+  line: "#E4DCC8",
+};
+
+// ============================================================
+// ICONS (tự vẽ SVG đơn giản, thay cho lucide-react vì bản standalone
+// không có bước build để import package đó)
+// ============================================================
+function Icon({ children, size = 16, color = "currentColor", className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {children}
+    </svg>
+  );
+}
+const RefreshCw = (p) => <Icon {...p}><path d="M21 12a9 9 0 0 1-15.5 6.36M3 12a9 9 0 0 1 15.5-6.36" /><path d="M21 3v6h-6M3 21v-6h6" /></Icon>;
+const AlertTriangle = (p) => <Icon {...p}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></Icon>;
+const TrendingDown = (p) => <Icon {...p}><polyline points="22 17 13.5 8.5 8.5 13.5 2 7" /><polyline points="16 17 22 17 22 11" /></Icon>;
+const FileText = (p) => <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></Icon>;
+const Camera = (p) => <Icon {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z" /><circle cx="12" cy="13" r="4" /></Icon>;
+const ChevronRight = (p) => <Icon {...p}><polyline points="9 18 15 12 9 6" /></Icon>;
+const X = (p) => <Icon {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>;
+const ShoppingCart = (p) => <Icon {...p}><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></Icon>;
+const Clock = (p) => <Icon {...p}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></Icon>;
+const Trash2 = (p) => <Icon {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></Icon>;
+const Download = (p) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Icon>;
+const LayoutDashboard = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="9" /><rect x="14" y="3" width="7" height="5" /><rect x="14" y="12" width="7" height="9" /><rect x="3" y="16" width="7" height="5" /></Icon>;
+const ClipboardList = (p) => <Icon {...p}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="15" x2="16" y2="15" /></Icon>;
+const Bell = (p) => <Icon {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></Icon>;
+const Archive = (p) => <Icon {...p}><rect x="2" y="4" width="20" height="5" rx="1" /><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" /><line x1="10" y1="13" x2="14" y2="13" /></Icon>;
+const Tag = (p) => <Icon {...p}><path d="M20.59 13.41 13 21l-9-9V4h8l8.59 8.59a2 2 0 0 1 0 2.82Z" /><circle cx="7.5" cy="7.5" r="1.5" /></Icon>;
+
+const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`;
+
+// ============================================================
+// SIMPLE BAR CHART — tự vẽ bằng div, thay Recharts (CDN UMD không ổn định)
+// ============================================================
+function SimpleBarChart({ data, valueKey, labelKey, color }) {
+  if (!data || data.length === 0) {
+    return <div style={{ textAlign: "center", color: "#8a8272", padding: "40px 0" }}>Chưa có dữ liệu</div>;
+  }
+  const max = Math.max(1, ...data.map((d) => d[valueKey] || 0));
+  const showLabel = data.length <= 20;
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 220, padding: "0 4px" }}>
+      {data.map((d, i) => {
+        const val = d[valueKey] || 0;
+        const pct = Math.max((val / max) * 100, val > 0 ? 2 : 0);
+        return (
+          <div
+            key={i}
+            title={`${d[labelKey]}: ${fmtVND(val)}đ`}
+            style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}
+          >
+            <div
+              style={{
+                width: "100%",
+                background: color,
+                borderRadius: "3px 3px 0 0",
+                height: `${pct}%`,
+                minHeight: val > 0 ? 3 : 0,
+                transition: "height 0.2s",
+              }}
+            />
+            {showLabel && (
+              <div style={{ fontSize: 9, color: "#8a8272", marginTop: 4, textAlign: "center" }}>{d[labelKey]}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
+const DEFAULT_CONFIG = {
+  url: "https://script.google.com/macros/s/AKfycbxkunp06-7syVnAwXO0JV8PxG77jKTRxVzMT68IjZ79OCY57RDF7MYryf7BtOTEJAVptQ/exec",
+  // KHÔNG ghi token ở đây - file này sẽ được host công khai (GitHub Pages), ai xem source
+  // cũng đọc được. Token được người dùng TỰ NHẬP lúc đăng nhập (xem LoginGate bên dưới),
+  // lưu trong localStorage của TRÌNH DUYỆT HỌ, không nằm trong file này.
+};
+
+// Danh sách workflow hiển thị trên nút bấm — việc gọi GitHub API thật sự nằm
+// ở phía Apps Script (server-side), token GitHub KHÔNG nằm trong code client này.
+// Đã bỏ "Tồn kho" khỏi danh sách này (workflow ton-kho-sync.yml đã tắt, dùng import
+// tay thay thế cho cả 3 chi nhánh - xem thanh "Import Tồn Kho thủ công" bên dưới).
+const WORKFLOWS = [
+  { id: "daily-sync.yml", label: "Hóa đơn" },
+  { id: "nhap-hang-sync.yml", label: "Nhập hàng" },
+];
+
+// Quy cách đóng gói (Số lượng/thùng) theo từng Mã hàng - lấy từ file Working File thật
+// của bạn (Tồn_Kho_070726.xlsx). Dùng để tính "SL cần đặt" ra đúng đơn vị THÙNG thay vì
+// chỉ đơn vị lẻ, khớp công thức: ROUNDUP((Tồn tối thiểu - Tồn hiện tại)/Số lượng/thùng, 0)
+const PACK_SIZE_MAP = {"SP000024":24, "SP000050":24, "SP000048":0, "SP000066":600, "SP000018":24, "SP000020":24, "SP000177":24, "SP000012":15, "SP000184":24, "SP000072":3, "SP000178":24, "SP000010":24, "SP000016":24, "SP000030":24, "SP000040":24, "SP000042":24, "SP000044":24, "SP000046":24, "SP000064":600, "SP000073":1, "SP000079":1, "SP000080":1, "SP000082":1, "SP000084":1, "SP000110":24, "SP000128":24, "SP000130":24, "SP000141":120, "SP000148":1, "SP000152":1, "SP000156":1, "SP000158":1, "SP000165":1, "SP000172":1, "SP000174":1, "SP000179":1, "SP000180":1, "SP000183":1, "SP000215":1, "SP000217":1, "SP000266":24, "SP000267":1, "SP000268":24, "SP000004":1, "SP000006":1, "SP000014":24, "SP000026":24, "SP000028":1, "SP000052":1, "SP000054":1, "SP000056":1, "SP000058":1, "SP000060":1, "SP000062":1, "SP000067":1, "SP000068":1, "SP000069":1, "SP000071":1, "SP000074":1, "SP000078":1, "SP000081":1, "SP000083":1, "SP000085":1, "SP000086":1, "SP000087":1, "SP000088":1, "SP000089":1, "SP000090":1, "SP000091":1, "SP000092":1, "SP000093":1, "SP000094":1, "SP000095":1, "SP000096":1, "SP000097":1, "SP000098":1, "SP000099":1, "SP000101":1, "SP000102":1, "SP000103":1, "SP000104":1, "SP000112":1, "SP000113":1, "SP000114":1, "SP000115":1, "SP000116":1, "SP000117":1, "SP000119":1, "SP000125":1, "SP000126":24, "SP000132":1, "SP000134":1, "SP000137":1, "SP000139":1, "SP000143":1, "SP000145":1, "SP000146":1, "SP000149":1, "SP000150":1, "SP000153":1, "SP000154":1, "SP000157":1, "SP000159":1, "SP000161":1, "SP000163":1, "SP000166":1, "SP000173":1, "SP000182":1, "SP000189":1, "SP000190":1, "SP000209":1, "SP000211":1, "SP000216":1, "SP000218":1, "SP000219":1, "SP000270":1, "SP000272":1, "SP000276":1, "SP000277":1, "SP000278":1, "SP000279":1, "SP000281":1, "SP000282":1, "SP000275":1, "SP000164":1, "SP000160":1, "SP000155":1, "SP000144":1, "SP000142":1, "SP000138":1, "SP000136":1, "SP000065":1, "SP000063":600, "SP000061":1, "SP000059":1, "SP000057":1, "SP000055":1, "SP000053":1, "SP000051":1, "SP000280":20};
+
+// Tên đơn vị đóng gói theo từng mã hàng (mặc định "thùng" nếu không khai báo riêng).
+// Thêm mã hàng nào cần tính theo vỉ/lốc/bao... thì khai báo thêm ở đây, kèm SL/gói tương
+// ứng ở PACK_SIZE_MAP bên trên.
+const PACK_UNIT_MAP = {"SP000280": "vỉ"}; // Trứng gà luộc - vỉ 20 trái
+
+// Leadtime giao hàng (ngày) theo từng Mã hàng - lấy từ Working File thật
+const LEADTIME_MAP = {"SP000024":2, "SP000050":2, "SP000048":2, "SP000066":5, "SP000018":2, "SP000020":2, "SP000177":2, "SP000012":2, "SP000184":2, "SP000072":2, "SP000178":2, "SP000010":2, "SP000016":2, "SP000030":2, "SP000040":2, "SP000042":2, "SP000044":2, "SP000046":2, "SP000064":2, "SP000073":2, "SP000079":2, "SP000080":2, "SP000082":2, "SP000084":2, "SP000110":2, "SP000128":2, "SP000130":2, "SP000141":2, "SP000148":2, "SP000152":2, "SP000156":2, "SP000158":2, "SP000165":2, "SP000172":2, "SP000174":2, "SP000179":2, "SP000180":2, "SP000183":2, "SP000215":2, "SP000217":2, "SP000266":2, "SP000267":2, "SP000268":2, "SP000004":3, "SP000006":4, "SP000014":5, "SP000026":6, "SP000028":7, "SP000052":8, "SP000054":9, "SP000056":10, "SP000058":11, "SP000060":12, "SP000062":13, "SP000067":14, "SP000068":15, "SP000069":16, "SP000071":17, "SP000074":18, "SP000078":19, "SP000081":20, "SP000083":21, "SP000085":22, "SP000086":23, "SP000087":24, "SP000088":25, "SP000089":26, "SP000090":27, "SP000091":28, "SP000092":29, "SP000093":30, "SP000094":31, "SP000095":32, "SP000096":33, "SP000097":34, "SP000098":35, "SP000099":36, "SP000101":37, "SP000102":38, "SP000103":39, "SP000104":40, "SP000112":41, "SP000113":42, "SP000114":43, "SP000115":44, "SP000116":45, "SP000117":46, "SP000119":47, "SP000125":48, "SP000126":49, "SP000132":50, "SP000134":51, "SP000137":52, "SP000139":53, "SP000143":54, "SP000145":55, "SP000146":56, "SP000149":57, "SP000150":58, "SP000153":59, "SP000154":60, "SP000157":61, "SP000159":62, "SP000161":63, "SP000163":64, "SP000166":65, "SP000173":66, "SP000182":67, "SP000189":68, "SP000190":69, "SP000209":70, "SP000211":71, "SP000216":72, "SP000218":73, "SP000219":74, "SP000270":75, "SP000272":76, "SP000276":77, "SP000277":78, "SP000278":79, "SP000279":80, "SP000281":81, "SP000282":82, "SP000275":83, "SP000164":84, "SP000160":85, "SP000155":86, "SP000144":87, "SP000142":88, "SP000138":89, "SP000136":90, "SP000065":91, "SP000063":92, "SP000061":93, "SP000059":94, "SP000057":95, "SP000055":96, "SP000053":97, "SP000051":98};
+
+const BRANCHES = ["ARENA.01", "ARENA.02", "ARENA.03"];
+// Đã bỏ hẳn tự động sync Tồn Kho (Playwright + đổi chi nhánh quá phức tạp/kém ổn định) ->
+// dùng import tay qua dashboard cho CẢ 3 chi nhánh, kể cả ARENA.01.
+const IMPORT_BRANCHES = ["ARENA.01", "ARENA.02", "ARENA.03"];
+const LOOKBACK_DAYS = 30;
+const BUFFER_DAYS = 7;
+const STALE_DAYS = 30;
+
+// ============================================================
+// HELPERS
+// ============================================================
+function parseDate(str) {
+  if (!str) return null;
+  if (str instanceof Date) return str;
+  const s = String(str);
+  const m = s.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  const m2 = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) return new Date(+m2[1], +m2[2] - 1, +m2[3]);
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+function fmtVND(n) {
+  if (n == null || isNaN(n)) return "0";
+  return Math.round(n).toLocaleString("vi-VN");
+}
+function fmtDate(d) {
+  if (!d) return "—";
+  return d.toLocaleDateString("vi-VN");
+}
+function daysAgo(d, now) {
+  if (!d) return null;
+  return Math.floor((now - d) / (24 * 3600 * 1000));
+}
+// Chuẩn hóa chuỗi để tìm kiếm: bỏ dấu tiếng Việt + viết thường, giúp gõ không dấu vẫn tìm ra
+// (VD: gõ "nuoc" vẫn khớp "Nước ngọt Revive")
+function normalizeVN(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+// ============================================================
+// STORAGE HELPERS (localStorage — lưu trong trình duyệt của bạn)
+// ============================================================
+function loadJSON(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+function saveJSON(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error("storage error", e);
+  }
+}
+
+// ============================================================
+// APP
+// ============================================================
+// Màn hình đăng nhập - yêu cầu nhập "mã truy cập" (chính là API_TOKEN của Apps Script).
+// KHÔNG kiểm tra đúng/sai ở đây (không có gì để so sánh, vì không lưu token trong code) -
+// cứ nhập xong là thử gọi API luôn; nếu sai, dashboard sẽ tự báo lỗi "Sai token" như bình
+// thường (xem phần error ở App) và người dùng bấm "Đổi mã truy cập" để nhập lại.
+function LoginGate({ onLogin }) {
+  const [value, setValue] = useState("");
+
+  const submit = (e) => {
+    e.preventDefault();
+    onLogin(value);
+  };
+
+  return (
+    <div
+      className="flex items-center justify-center"
+      style={{ minHeight: "100vh", background: C.cream, fontFamily: "Inter, sans-serif" }}
+    >
+      <style>{FONT_IMPORT}</style>
+      <form
+        onSubmit={submit}
+        className="flex flex-col gap-3 p-6 rounded-xl"
+        style={{ background: "#fff", border: `1px solid ${C.line}`, width: 340 }}
+      >
+        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 20, color: C.court }}>
+          ARENA - SÀN THỂ THAO
+        </div>
+        <div style={{ fontSize: 13, color: "#8a8272" }}>
+          Nhập mã truy cập để vào dashboard. Mã này chỉ được lưu trên máy bạn, không ai khác xem
+          được kể cả khi trang này công khai trên internet.
+        </div>
+        <input
+          type="password"
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Mã truy cập"
+          style={{
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: `1px solid ${C.line}`,
+            fontSize: 14,
+          }}
+        />
+        <button
+          type="submit"
+          disabled={!value.trim()}
+          className="px-4 py-2.5 rounded-lg"
+          style={{
+            background: value.trim() ? C.amber : C.floorLight,
+            color: value.trim() ? C.courtDeep : "#b5ac96",
+            fontWeight: 700,
+            fontSize: 14,
+          }}
+        >
+          Vào dashboard
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function App() {
+  // Token do người dùng TỰ NHẬP lúc đăng nhập (không nằm trong code) - đọc lại từ
+  // localStorage của trình duyệt họ nếu đã từng đăng nhập trước đó trên máy này.
+  const [token, setToken] = useState(() => {
+    try {
+      return localStorage.getItem("kv-access-token") || "";
+    } catch (e) {
+      return "";
+    }
+  });
+  const config = useMemo(() => ({ ...DEFAULT_CONFIG, token }), [token]);
+
+  const handleLogin = (enteredToken) => {
+    const t = enteredToken.trim();
+    if (!t) return;
+    try {
+      localStorage.setItem("kv-access-token", t);
+    } catch (e) {}
+    setToken(t);
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem("kv-access-token");
+    } catch (e) {}
+    setToken("");
+  };
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [data, setData] = useState({ invoices: [], tonkho: [], nhaphang: [], assortment: [] });
+  const [lastSync, setLastSync] = useState(null);
+  const [tab, setTab] = useState("dashboard");
+  const [poHistory, setPoHistory] = useState([]);
+  const [workflowStatus, setWorkflowStatus] = useState({}); // { [workflowId]: "idle"|"loading"|"done"|"error" }
+  // Số lượng đặt hàng người dùng TỰ CHỈNH SỬA, ghi đè lên số gợi ý tự động - key dạng
+  // "branch|mã hàng" -> số lượng (đơn vị = packUnit của mã đó). Dùng chung giữa tab
+  // "Đặt hàng" và "Tạo PO" để chỉnh 1 chỗ thì chỗ kia cũng thấy đúng số đã sửa.
+  const [orderOverrides, setOrderOverrides] = useState({});
+  // NCC người dùng TỰ GÁN cho mã hàng chưa có lịch sử Nhập Hàng - key "branch|mã hàng" ->
+  // tên NCC. Lưu vào localStorage (trình duyệt của bạn) để không mất khi tải lại trang.
+  const [supplierOverrides, setSupplierOverrides] = useState({});
+  // Mã hàng (theo từng chi nhánh) người dùng chủ động ẨN khỏi danh sách "cần đặt" - key
+  // "branch|mã hàng" -> true. Không đụng gì tới Assortment (đây chỉ là "tạm thời không muốn
+  // đặt mã này", khác với "mã này không thuộc danh mục chính thức").
+  const [hiddenOrderItems, setHiddenOrderItems] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      const hist = await loadJSON("po-history", []);
+      setPoHistory(hist);
+      const sup = await loadJSON("supplier-overrides", {});
+      setSupplierOverrides(sup);
+      const hidden = await loadJSON("hidden-order-items", {});
+      setHiddenOrderItems(hidden);
+    })();
+  }, []);
+
+  const assignSupplier = useCallback((branch, ma, supplierName) => {
+    setSupplierOverrides((prev) => {
+      const next = { ...prev, [branch + "|" + ma]: supplierName };
+      saveJSON("supplier-overrides", next);
+      return next;
+    });
+  }, []);
+
+  const toggleHiddenOrderItem = useCallback((branch, ma, hide) => {
+    setHiddenOrderItems((prev) => {
+      const key = branch + "|" + ma;
+      const next = { ...prev };
+      if (hide) {
+        next[key] = true;
+      } else {
+        delete next[key];
+      }
+      saveJSON("hidden-order-items", next);
+      return next;
+    });
+  }, []);
+
+  const triggerWorkflow = useCallback(
+    async (workflowId) => {
+      setWorkflowStatus((s) => ({ ...s, [workflowId]: "loading" }));
+      try {
+        const url = `${config.url}?token=${encodeURIComponent(config.token)}&action=trigger_workflow&workflow=${encodeURIComponent(workflowId)}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
+        setWorkflowStatus((s) => ({ ...s, [workflowId]: "done" }));
+        setTimeout(() => setWorkflowStatus((s) => ({ ...s, [workflowId]: "idle" })), 8000);
+      } catch (e) {
+        console.error(e);
+        setWorkflowStatus((s) => ({ ...s, [workflowId]: "error" }));
+      }
+    },
+    [config]
+  );
+
+  const fetchSheet = useCallback(
+    async (sheetName) => {
+      const url = `${config.url}?token=${encodeURIComponent(config.token)}&sheet=${encodeURIComponent(sheetName)}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      return Array.isArray(json) ? json : [];
+    },
+    [config]
+  );
+
+  // ============================================================
+  // IMPORT TỒN KHO THỦ CÔNG (ARENA.02 / ARENA.03) - đọc file Excel NGAY TRONG
+  // TRÌNH DUYỆT bằng SheetJS (không upload lên đâu cả), thêm cột "Kho" đúng chi
+  // nhánh đã chọn (y hệt cột script Python tự thêm), rồi gửi lên Apps Script để
+  // ghi đè (Replace) đúng sheet TonKho_ARENA0X - thay cho việc phải làm tay qua
+  // Google Sheets File -> Import mỗi lần.
+  // ============================================================
+  const [importStatus, setImportStatus] = useState({}); // { [branch]: "idle"|"loading"|"done"|"error" }
+  const [importMessage, setImportMessage] = useState({}); // { [branch]: string }
+
+  const importTonKhoFile = useCallback(
+    async (branch, file) => {
+      setImportStatus((s) => ({ ...s, [branch]: "loading" }));
+      setImportMessage((s) => ({ ...s, [branch]: "" }));
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const firstSheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[firstSheetName];
+        const rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        if (!rows2d || rows2d.length < 2) {
+          throw new Error("File rỗng hoặc không đọc được dữ liệu.");
+        }
+
+        const rawHeaders = rows2d[0].map((h) => String(h == null ? "" : h).trim());
+        // Bỏ dòng nào trống hoàn toàn (giống dropna(how="all") bên Python)
+        const dataRows = rows2d
+          .slice(1)
+          .filter((r) => r.some((c) => c !== "" && c !== null && c !== undefined));
+
+        if (dataRows.length === 0) {
+          throw new Error("File không có dòng dữ liệu nào (chỉ có tiêu đề).");
+        }
+
+        const headers = [...rawHeaders, "Kho"];
+        const rows = dataRows.map((r) => {
+          const row = rawHeaders.map((_, i) => (r[i] !== undefined ? r[i] : ""));
+          row.push(branch);
+          return row;
+        });
+
+        const sheetName = "TonKho_" + branch.replace(".", "");
+
+        const res = await fetch(config.url, {
+          method: "POST",
+          // Cố ý dùng text/plain thay vì application/json để trình duyệt KHÔNG gửi
+          // preflight OPTIONS (Apps Script Web App không tự xử lý OPTIONS, sẽ lỗi
+          // CORS nếu để application/json kích hoạt preflight). Apps Script vẫn đọc
+          // đúng JSON từ e.postData.contents bất kể Content-Type khai báo là gì.
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            token: config.token,
+            action: "import_sheet",
+            sheet: sheetName,
+            headers,
+            rows,
+          }),
+        });
+
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
+
+        setImportStatus((s) => ({ ...s, [branch]: "done" }));
+        setImportMessage((s) => ({ ...s, [branch]: `Đã ghi ${json.rowsWritten ?? rows.length} dòng vào ${sheetName}.` }));
+
+        // Tải lại dữ liệu dashboard ngay để phản ánh số liệu mới import
+        await syncData();
+
+        setTimeout(() => setImportStatus((s) => ({ ...s, [branch]: "idle" })), 6000);
+      } catch (e) {
+        console.error(e);
+        setImportStatus((s) => ({ ...s, [branch]: "error" }));
+        setImportMessage((s) => ({ ...s, [branch]: e.message || String(e) }));
+      }
+    },
+    [config]
+  );
+
+  // ============================================================
+  // ASSORTMENT (danh mục hàng chính thức) - import file "Working File" (hoặc sheet đầu
+  // tiên nếu không thấy tên đó), lấy cột Mã hàng + Tên hàng, ghi lên sheet "Assortment"
+  // trên Google Sheets. Dùng chung 1 hàm push cho cả import file lẫn xóa từng mã (xóa =
+  // ghi lại danh sách đã bớt đi 1 mã, không cần thêm action riêng ở Apps Script).
+  // ============================================================
+  const [assortmentStatus, setAssortmentStatus] = useState("idle"); // idle|loading|done|error
+  const [assortmentMessage, setAssortmentMessage] = useState("");
+
+  const pushAssortment = useCallback(
+    async (list) => {
+      const res = await fetch(config.url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          token: config.token,
+          action: "import_sheet",
+          sheet: "Assortment",
+          headers: ["Mã hàng", "Tên hàng", "Quy cách đóng gói", "Leadtime giao hàng (ngày)"],
+          rows: list.map((r) => [r.ma, r.ten || "", r.packSize ?? "", r.leadtime ?? ""]),
+        }),
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      return json;
+    },
+    [config]
+  );
+
+  const importAssortmentFile = useCallback(
+    async (file) => {
+      setAssortmentStatus("loading");
+      setAssortmentMessage("");
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const sheetName = wb.SheetNames.find((n) => n.trim() === "Working File") || wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        // Dòng tiêu đề thật không nhất thiết ở hàng đầu (VD sheet "Working File" có 1 dòng
+        // "Sân | A1" ở trên trước khi tới dòng tiêu đề thật) -> tự tìm đúng dòng có "Mã hàng".
+        const headerRowIdx = rows2d.findIndex((r) => r.some((c) => String(c).trim() === "Mã hàng"));
+        if (headerRowIdx === -1) {
+          throw new Error(`Không tìm thấy cột "Mã hàng" trong sheet "${sheetName}" của file này.`);
+        }
+
+        // .trim() từng tên cột - file gốc có khoảng trắng thừa ở cuối tên (VD "Quy cách đóng
+        // gói ", "Leadtime giao hàng (ngày) ") khiến so khớp tên cột bị trật nếu không trim.
+        const headers = rows2d[headerRowIdx].map((h) => String(h == null ? "" : h).trim());
+        const maIdx = headers.indexOf("Mã hàng");
+        const tenIdx = headers.indexOf("Tên hàng");
+        const packSizeIdx = headers.indexOf("Quy cách đóng gói");
+        const leadtimeIdx = headers.indexOf("Leadtime giao hàng (ngày)");
+
+        const dataRows = rows2d.slice(headerRowIdx + 1).filter((r) => String(r[maIdx] || "").trim());
+        if (dataRows.length === 0) {
+          throw new Error("Không có mã hàng nào trong sheet này.");
+        }
+
+        // Dùng ĐÚNG quy cách đóng gói + leadtime từ chính file Working File này - không còn
+        // dùng bảng PACK_SIZE_MAP/LEADTIME_MAP cứng trong code nữa (sẽ chỉ còn là fallback
+        // khi mã hàng nào đó chưa có trong Assortment).
+        const list = dataRows.map((r) => {
+          const packSizeRaw = packSizeIdx >= 0 ? Number(r[packSizeIdx]) : NaN;
+          const leadtimeRaw = leadtimeIdx >= 0 ? Number(r[leadtimeIdx]) : NaN;
+          return {
+            ma: String(r[maIdx]).trim(),
+            ten: tenIdx >= 0 ? String(r[tenIdx] || "").trim() : "",
+            packSize: Number.isFinite(packSizeRaw) && packSizeRaw > 0 ? packSizeRaw : "",
+            leadtime: Number.isFinite(leadtimeRaw) ? leadtimeRaw : "",
+          };
+        });
+
+        const json = await pushAssortment(list);
+        setAssortmentStatus("done");
+        setAssortmentMessage(
+          `Đã cập nhật ${json.rowsWritten ?? list.length} mã hàng vào Assortment (đọc từ sheet "${sheetName}"), kèm quy cách đóng gói + leadtime.`
+        );
+        await syncData();
+        setTimeout(() => setAssortmentStatus("idle"), 6000);
+      } catch (e) {
+        console.error(e);
+        setAssortmentStatus("error");
+        setAssortmentMessage(e.message || String(e));
+      }
+    },
+    [pushAssortment]
+  );
+
+  const deleteAssortmentItem = useCallback(
+    async (ma) => {
+      try {
+        const remaining = data.assortment
+          .filter((row) => (row["Mã hàng"] || "").trim() !== ma)
+          .map((row) => ({
+            ma: row["Mã hàng"],
+            ten: row["Tên hàng"] || "",
+            packSize: row["Quy cách đóng gói"] ?? "",
+            leadtime: row["Leadtime giao hàng (ngày)"] ?? "",
+          }));
+        await pushAssortment(remaining);
+        await syncData();
+      } catch (e) {
+        window.alert("Lỗi khi xóa mã hàng khỏi Assortment: " + (e.message || String(e)));
+      }
+    },
+    [data.assortment, pushAssortment]
+  );
+
+  const syncData = useCallback(async () => {
+    if (!config || !config.url || !config.token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // Tồn Kho giờ tách thành 3 sheet riêng theo chi nhánh (TonKho_ARENA01/02/03) thay vì
+      // 1 sheet "TonKho" gộp chung như trước. Mỗi sheet đã có sẵn cột "Kho" ghi đúng tên chi
+      // nhánh (do script Python tự thêm) -> chỉ cần gộp lại thành 1 mảng là có ĐÚNG shape dữ
+      // liệu mà phần forecast/cảnh báo/tạo PO phía dưới đang mong đợi, không cần sửa gì thêm.
+      //
+      // "Assortment" là sheet TÙY CHỌN (có thể chưa từng được tạo nếu chưa import lần nào) ->
+      // fetch riêng, lỗi/không tồn tại thì coi như danh mục rỗng, KHÔNG làm hỏng cả lần sync.
+      const [invoices, tonkho01, tonkho02, tonkho03, nhaphang] = await Promise.all([
+        fetchSheet("Invoices"),
+        fetchSheet("TonKho_ARENA01"),
+        fetchSheet("TonKho_ARENA02"),
+        fetchSheet("TonKho_ARENA03"),
+        fetchSheet("NhapHang"),
+      ]);
+      const tonkho = [...tonkho01, ...tonkho02, ...tonkho03];
+      let assortment = [];
+      try {
+        assortment = await fetchSheet("Assortment");
+      } catch (e) {
+        assortment = [];
+      }
+      setData({ invoices, tonkho, nhaphang, assortment });
+      setLastSync(new Date());
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [config, fetchSheet]);
+
+  useEffect(() => {
+    if (config && config.url && config.token) syncData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config]);
+
+  const addPoToHistory = async (po) => {
+    const next = [po, ...poHistory].slice(0, 50);
+    setPoHistory(next);
+    await saveJSON("po-history", next);
+  };
+  const deletePo = async (id) => {
+    const next = poHistory.filter((p) => p.id !== id);
+    setPoHistory(next);
+    await saveJSON("po-history", next);
+  };
+
+  // ============================================================
+  // DERIVED: distinct invoices (revenue at invoice grain, not line-item)
+  // ============================================================
+  const distinctInvoices = useMemo(() => {
+    const map = new Map();
+    data.invoices.forEach((row) => {
+      const code = row["Mã hóa đơn"];
+      if (!code || map.has(code)) return;
+      map.set(code, {
+        code,
+        branch: row["Chi nhánh"],
+        date: parseDate(row["Giờ đến"]),
+        total: Number(row["Tổng tiền hàng"] || 0),
+      });
+    });
+    return Array.from(map.values());
+  }, [data.invoices]);
+
+  // Danh sách Mã hàng chính thức nằm trong Assortment (nếu chưa import lần nào thì rỗng ->
+  // KHÔNG đánh dấu "ngoài assortment" cho bất kỳ mã nào cả, tránh cảnh báo sai khi tính năng
+  // này chưa được thiết lập).
+  const assortmentSet = useMemo(() => {
+    const set = new Set();
+    data.assortment.forEach((row) => {
+      const ma = (row["Mã hàng"] || "").trim();
+      if (ma) set.add(ma);
+    });
+    return set;
+  }, [data.assortment]);
+
+  // Quy cách đóng gói + leadtime lấy TRỰC TIẾP từ chính file Assortment (Working File) thay
+  // vì bảng PACK_SIZE_MAP/LEADTIME_MAP cứng trong code - luôn khớp đúng với số liệu thật bạn
+  // đang dùng để tính tay, không sợ code bị lỗi thời khi quy cách thay đổi.
+  const assortmentInfoMap = useMemo(() => {
+    const map = {};
+    data.assortment.forEach((row) => {
+      const ma = (row["Mã hàng"] || "").trim();
+      if (!ma) return;
+      const packSize = Number(row["Quy cách đóng gói"]);
+      const leadtime = Number(row["Leadtime giao hàng (ngày)"]);
+      map[ma] = {
+        packSize: Number.isFinite(packSize) && packSize > 0 ? packSize : null,
+        leadtime: Number.isFinite(leadtime) ? leadtime : null,
+      };
+    });
+    return map;
+  }, [data.assortment]);
+
+  // ============================================================
+  // DERIVED: forecast per (branch, mã hàng)
+  // ============================================================
+  const forecast = useMemo(() => {
+    if (!data.tonkho.length) return [];
+    const now = new Date();
+    const cutoff30 = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 3600 * 1000);
+    const cutoff60 = new Date(now.getTime() - 60 * 24 * 3600 * 1000);
+
+    const salesMap = {};
+    data.invoices.forEach((row) => {
+      const branch = row["Chi nhánh"];
+      const ma = row["Mã hàng"];
+      if (!branch || !ma) return;
+      const d = parseDate(row["Giờ đến"]);
+      const key = branch + "|" + ma;
+      if (!salesMap[key]) salesMap[key] = { qty30: 0, qty60: 0, lastDate: null };
+      const qty = Number(row["Số lượng"] || 0);
+      if (d && d >= cutoff30) salesMap[key].qty30 += qty;
+      if (d && d >= cutoff60) salesMap[key].qty60 += qty;
+      if (d && (!salesMap[key].lastDate || d > salesMap[key].lastDate)) {
+        salesMap[key].lastDate = d;
+      }
+    });
+
+    return data.tonkho
+      .filter((t) => t["Mã hàng"] && t["Kho"])
+      .map((t) => {
+        const branch = t["Kho"];
+        const ma = t["Mã hàng"];
+        const key = branch + "|" + ma;
+        const sale = salesMap[key] || { qty30: 0, qty60: 0, lastDate: null };
+        const avgDay = sale.qty30 > 0 ? Math.ceil(sale.qty30 / LOOKBACK_DAYS) : 0;
+        const minStock = Math.ceil(avgDay * BUFFER_DAYS);
+        // Tồn kho hiện tại đôi khi có giá trị âm/lẻ bất thường (lỗi dữ liệu nguồn, VD do quy đổi
+        // đơn vị) -> chặn về tối thiểu 0, tránh needQty bị tính sai thành số lẻ khó hiểu.
+        const rawCurrent = Number(t["Tồn kho hiện tại"] || 0);
+        const current = Math.max(0, rawCurrent);
+        const needQty = Math.max(0, minStock - current);
+        // Ưu tiên quy cách đóng gói + leadtime lấy từ chính file Assortment (Working File thật)
+        // - chỉ dùng bảng PACK_SIZE_MAP/LEADTIME_MAP cứng trong code làm dự phòng cho mã hàng
+        // nào CHƯA có trong Assortment (hoặc trước khi import Assortment lần đầu).
+        const assortInfo = assortmentInfoMap[ma];
+        // packSize mặc định = 1 (thay vì 0) khi không có ở đâu cả -> orderCases LUÔN là số
+        // nguyên tối thiểu 1 khi needQty > 0, không còn rơi vào nhánh hiển thị số lẻ/âm
+        // (VD "+0.042 thùng") như trước.
+        const packSize = (assortInfo && assortInfo.packSize) || PACK_SIZE_MAP[ma] || 1;
+        const orderCases = needQty > 0 ? Math.max(1, Math.ceil(needQty / packSize)) : 0;
+        const packUnit = PACK_UNIT_MAP[ma] || "thùng";
+        const leadtime = (assortInfo && assortInfo.leadtime != null) ? assortInfo.leadtime : (LEADTIME_MAP[ma] ?? null);
+        const dSince = daysAgo(sale.lastDate, now);
+        return {
+          branch,
+          ma,
+          ten: t["Tên hàng"],
+          dvt: t["ĐVT"] || "",
+          soldQty30: sale.qty30,
+          soldQty60: sale.qty60,
+          avgDay,
+          minStock,
+          current,
+          needQty,
+          packSize,
+          orderCases,
+          packUnit,
+          leadtime,
+          daysSinceLastSale: dSince,
+          soldIn30: sale.qty30 > 0,
+          soldIn60: sale.qty60 > 0,
+          isLow: current < minStock && minStock > 0,
+          isStale: current > 0 && (dSince === null || dSince >= STALE_DAYS),
+          isOutOfAssortment: assortmentSet.size > 0 && !assortmentSet.has(ma),
+        };
+      });
+  }, [data, assortmentSet, assortmentInfoMap]);
+
+  // Gộp doanh số 30 ngày qua (TỔNG CẢ 3 CHI NHÁNH) theo từng Mã hàng - dùng để hiển thị
+  // nhanh trong tab Assortment, khỏi phải mở tab Đặt hàng mới xem được đang bán chạy/chậm.
+  const assortmentSalesMap = useMemo(() => {
+    const map = {};
+    forecast.forEach((f) => {
+      if (!map[f.ma]) map[f.ma] = { qty30: 0, current: 0 };
+      map[f.ma].qty30 += f.soldQty30;
+      map[f.ma].current += f.current;
+    });
+    return map;
+  }, [forecast]);
+
+  // ============================================================
+  // DERIVED: supplier mapping (branch|ma -> supplier gần nhất)
+  // ============================================================
+  const supplierMap = useMemo(() => {
+    const map = {};
+    const sorted = [...data.nhaphang].sort(
+      (a, b) => (parseDate(a["Thời gian"]) || 0) - (parseDate(b["Thời gian"]) || 0)
+    );
+    sorted.forEach((row) => {
+      const branch = row["Chi nhánh"];
+      const ma = row["Mã hàng"];
+      if (!branch || !ma) return;
+      map[branch + "|" + ma] = {
+        supplier: row["Nhà cung cấp"] || "Chưa xác định",
+        supplierCode: row["Mã nhà cung cấp"] || "",
+      };
+    });
+    // Áp NCC người dùng tự gán ĐÈ LÊN dữ liệu từ lịch sử Nhập Hàng (ưu tiên lựa chọn thủ công).
+    Object.entries(supplierOverrides).forEach(([key, supplierName]) => {
+      if (!supplierName) return;
+      map[key] = { supplier: supplierName, supplierCode: "" };
+    });
+    return map;
+  }, [data.nhaphang, supplierOverrides]);
+
+  // Danh sách tên NCC đã từng xuất hiện trong lịch sử Nhập Hàng - dùng làm option cho
+  // Droplist chọn NCC, tránh phải gõ tay/gõ sai tên NCC đã có sẵn.
+  const knownSuppliers = useMemo(() => {
+    const set = new Set();
+    data.nhaphang.forEach((row) => {
+      const s = (row["Nhà cung cấp"] || "").trim();
+      if (s) set.add(s);
+    });
+    Object.values(supplierOverrides).forEach((s) => {
+      if (s) set.add(s);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [data.nhaphang, supplierOverrides]);
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+  if (!token) {
+    return <LoginGate onLogin={handleLogin} />;
+  }
+
+  return (
+    <div style={{ background: C.cream, minHeight: "100%", fontFamily: "Inter, sans-serif", color: C.ink }}>
+      <style>{FONT_IMPORT}</style>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .po-print-area, .po-print-area * { visibility: visible; }
+          .po-print-area {
+            position: absolute; top: 0; left: 0; width: 100%;
+            padding: 24px;
+          }
+          .po-no-print { display: none !important; }
+        }
+      `}</style>
+      <TopBar lastSync={lastSync} loading={loading} onSync={syncData} onLogout={handleLogout} />
+      <GithubSyncBar status={workflowStatus} onTrigger={triggerWorkflow} />
+      <ImportTonKhoBar status={importStatus} message={importMessage} onImportFile={importTonKhoFile} />
+      {error && (
+        <div className="mx-4 mt-3 md:mx-8" style={{ background: C.dangerBg, color: C.danger, borderRadius: 10, padding: "10px 16px", fontSize: 14 }}>
+          Lỗi tải dữ liệu: {error}
+        </div>
+      )}
+
+      <TabBar tab={tab} setTab={setTab} />
+      <div className="px-4 md:px-8 pb-16 pt-4">
+        {tab === "dashboard" && (
+          <Dashboard distinctInvoices={distinctInvoices} forecast={forecast} />
+        )}
+        {tab === "forecast" && (
+          <ForecastTab
+            forecast={forecast}
+            orderOverrides={orderOverrides}
+            setOrderOverrides={setOrderOverrides}
+            hiddenOrderItems={hiddenOrderItems}
+            onToggleHidden={toggleHiddenOrderItem}
+          />
+        )}
+        {tab === "alerts" && <AlertsTab forecast={forecast} />}
+        {tab === "po" && (
+          <PoTab
+            forecast={forecast}
+            supplierMap={supplierMap}
+            onSave={addPoToHistory}
+            orderOverrides={orderOverrides}
+            setOrderOverrides={setOrderOverrides}
+            knownSuppliers={knownSuppliers}
+            onAssignSupplier={assignSupplier}
+            hiddenOrderItems={hiddenOrderItems}
+            onToggleHidden={toggleHiddenOrderItem}
+          />
+        )}
+        {tab === "history" && <HistoryTab history={poHistory} onDelete={deletePo} />}
+        {tab === "assortment" && (
+          <AssortmentTab
+            assortment={data.assortment}
+            salesMap={assortmentSalesMap}
+            status={assortmentStatus}
+            message={assortmentMessage}
+            onImportFile={importAssortmentFile}
+            onDelete={deleteAssortmentItem}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// TOP BAR
+// ============================================================
+function TopBar({ lastSync, loading, onSync, onLogout }) {
+  return (
+    <div style={{ background: C.court, color: C.cream }} className="px-4 md:px-8 py-4 flex items-center justify-between">
+      <div>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: 0.5 }}>
+          ARENA - SÀN THỂ THAO
+        </div>
+        <div style={{ color: C.floor, fontSize: 12 }}>
+          {lastSync
+            ? `Đồng bộ lúc ${lastSync.toLocaleTimeString("vi-VN")} · ${lastSync.toLocaleDateString("vi-VN")}`
+            : "Đang tải dữ liệu..."}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onSync}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+          style={{ background: C.amber, color: C.courtDeep, fontWeight: 600 }}
+        >
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          {loading ? "Đang tải..." : "Sync Data"}
+        </button>
+        <button
+          onClick={onLogout}
+          title="Đổi mã truy cập / đăng xuất"
+          className="px-3 py-2 rounded-lg text-sm"
+          style={{ background: "transparent", color: C.floor, border: `1px solid ${C.floor}` }}
+        >
+          Đăng xuất
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GithubSyncBar({ status, onTrigger }) {
+  return (
+    <div
+      className="px-4 md:px-8 py-2.5 flex flex-wrap items-center gap-2"
+      style={{ background: C.floorLight, borderBottom: `1px solid ${C.line}` }}
+    >
+      <span style={{ fontSize: 12, fontWeight: 600, color: "#5c5644" }}>Kéo dữ liệu mới từ KiotViet:</span>
+      {WORKFLOWS.map((w) => {
+        const st = status[w.id] || "idle";
+        return (
+          <button
+            key={w.id}
+            onClick={() => onTrigger(w.id)}
+            disabled={st === "loading"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs"
+            style={{
+              background: st === "error" ? C.dangerBg : st === "done" ? C.okBg : "#fff",
+              color: st === "error" ? C.danger : st === "done" ? C.ok : C.ink,
+              border: `1px solid ${C.line}`,
+              fontWeight: 600,
+            }}
+          >
+            <RefreshCw size={12} className={st === "loading" ? "animate-spin" : ""} />
+            {w.label}
+            {st === "loading" && " · đang gửi..."}
+            {st === "done" && " · đã gửi ✓"}
+            {st === "error" && " · lỗi"}
+          </button>
+        );
+      })}
+      <span style={{ fontSize: 11, color: "#8a8272" }}>
+        (chạy mất vài phút — quay lại bấm "Sync Data" sau khi xong)
+      </span>
+    </div>
+  );
+}
+
+function ImportTonKhoBar({ status, message, onImportFile }) {
+  const fileInputRefs = useRef({});
+
+  const handlePick = (branch) => {
+    const el = fileInputRefs.current[branch];
+    if (el) el.click();
+  };
+
+  const handleFileChange = (branch, e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // cho phép chọn lại đúng file đó lần sau vẫn kích hoạt onChange
+    if (file) onImportFile(branch, file);
+  };
+
+  const messages = IMPORT_BRANCHES.map((b) => ({ branch: b, text: message[b] })).filter((m) => m.text);
+
+  return (
+    <div style={{ background: "#fff", borderBottom: `1px solid ${C.line}` }}>
+      <div className="px-4 md:px-8 py-2.5 flex flex-wrap items-center gap-2">
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#5c5644" }}>
+          Import Tồn Kho thủ công (file Excel tải từ KiotViet):
+        </span>
+        {IMPORT_BRANCHES.map((branch) => {
+          const st = status[branch] || "idle";
+          return (
+            <React.Fragment key={branch}>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: "none" }}
+                ref={(el) => (fileInputRefs.current[branch] = el)}
+                onChange={(e) => handleFileChange(branch, e)}
+              />
+              <button
+                onClick={() => handlePick(branch)}
+                disabled={st === "loading"}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs"
+                style={{
+                  background: st === "error" ? C.dangerBg : st === "done" ? C.okBg : C.floorLight,
+                  color: st === "error" ? C.danger : st === "done" ? C.ok : C.ink,
+                  border: `1px solid ${C.line}`,
+                  fontWeight: 600,
+                }}
+              >
+                <Download size={12} className={st === "loading" ? "animate-spin" : ""} />
+                {branch}
+                {st === "loading" && " · đang import..."}
+                {st === "done" && " · xong ✓"}
+                {st === "error" && " · lỗi"}
+              </button>
+            </React.Fragment>
+          );
+        })}
+        <span style={{ fontSize: 11, color: "#8a8272" }}>
+          (bấm nút đúng chi nhánh → chọn file .xlsx vừa tải từ KiotViet → tự ghi đè, không cần vào Google Sheets)
+        </span>
+      </div>
+      {messages.length > 0 && (
+        <div className="px-4 md:px-8 pb-2 flex flex-col gap-1">
+          {messages.map((m) => (
+            <div
+              key={m.branch}
+              style={{
+                fontSize: 12,
+                color: status[m.branch] === "error" ? C.danger : C.ok,
+              }}
+            >
+              {m.branch}: {m.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function TabBar({ tab, setTab }) {
+  const tabs = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "forecast", label: "Đặt hàng", icon: ClipboardList },
+    { id: "alerts", label: "Cảnh báo", icon: Bell },
+    { id: "po", label: "Tạo PO", icon: ShoppingCart },
+    { id: "history", label: "Lịch sử PO", icon: Archive },
+    { id: "assortment", label: "Assortment", icon: Tag },
+  ];
+  return (
+    <div className="flex gap-1 px-4 md:px-8 pt-3 overflow-x-auto" style={{ borderBottom: `1px solid ${C.line}` }}>
+      {tabs.map((t) => {
+        const Icon = t.icon;
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap"
+            style={{
+              fontWeight: active ? 700 : 500,
+              color: active ? C.court : "#8a8272",
+              borderBottom: active ? `3px solid ${C.amber}` : "3px solid transparent",
+            }}
+          >
+            <Icon size={16} />
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function Dashboard({ distinctInvoices, forecast }) {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 3600 * 1000);
+  const recent = distinctInvoices.filter((i) => i.date && i.date >= cutoff);
+
+  const byBranch = BRANCHES.map((b) => {
+    const items = recent.filter((i) => i.branch === b);
+    const revenue = items.reduce((s, i) => s + i.total, 0);
+    return { branch: b, revenue, count: items.length };
+  });
+
+  const dailyMap = {};
+  recent.forEach((i) => {
+    const key = i.date.toISOString().slice(0, 10);
+    dailyMap[key] = (dailyMap[key] || 0) + i.total;
+  });
+  const dailyData = Object.entries(dailyMap)
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, revenue]) => ({ date: date.slice(5), revenue }));
+
+  const needOrderCount = forecast.filter((f) => f.needQty > 0).length;
+  const staleCount = forecast.filter((f) => f.isStale).length;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {byBranch.map((b) => (
+          <div key={b.branch} className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ fontSize: 12, color: "#8a8272", fontWeight: 600 }}>{b.branch}</div>
+            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, color: C.court }}>
+              {fmtVND(b.revenue)}đ
+            </div>
+            <div style={{ fontSize: 12, color: "#8a8272" }}>{b.count} hóa đơn · 30 ngày qua</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: C.floorLight }}>
+          <TrendingDown color={C.danger} />
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: C.court }}>{needOrderCount}</div>
+            <div style={{ fontSize: 13, color: "#5c5644" }}>mã hàng cần đặt thêm (dưới mức tồn tối thiểu)</div>
+          </div>
+        </div>
+        <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: C.floorLight }}>
+          <Clock color={C.amberDeep} />
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: C.court }}>{staleCount}</div>
+            <div style={{ fontSize: 13, color: "#5c5644" }}>mã hàng tồn kho ≥ {STALE_DAYS} ngày chưa bán</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
+          Doanh thu theo ngày (30 ngày qua, toàn hệ thống)
+        </div>
+        <SimpleBarChart data={dailyData} valueKey="revenue" labelKey="date" color={C.court} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// FORECAST TAB (Đặt hàng)
+// ============================================================
+function ForecastTab({ forecast, orderOverrides, setOrderOverrides, hiddenOrderItems, onToggleHidden }) {
+  const [branch, setBranch] = useState("ALL");
+  const [onlyNeed, setOnlyNeed] = useState(true);
+  const [onlyOutAssort, setOnlyOutAssort] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const keyOf = (r) => r.branch + "|" + r.ma;
+  const isHidden = (r) => !!hiddenOrderItems[keyOf(r)];
+
+  const rows = forecast
+    .filter((f) => branch === "ALL" || f.branch === branch)
+    .filter((f) => !onlyNeed || f.needQty > 0)
+    .filter((f) => !onlyOutAssort || f.isOutOfAssortment)
+    .filter((f) => showHidden || !isHidden(f))
+    .filter((f) => {
+      if (!search.trim()) return true;
+      const q = normalizeVN(search);
+      return normalizeVN(f.ma).includes(q) || normalizeVN(f.ten).includes(q);
+    })
+    .sort((a, b) => b.needQty - a.needQty);
+
+  const effectiveQty = (r) => {
+    const k = keyOf(r);
+    return orderOverrides[k] !== undefined ? orderOverrides[k] : r.orderCases;
+  };
+  const handleQtyChange = (r, value) => {
+    const k = keyOf(r);
+    const n = value === "" ? "" : Math.max(0, Math.floor(Number(value) || 0));
+    setOrderOverrides((prev) => ({ ...prev, [k]: n }));
+  };
+  const resetQty = (r) => {
+    const k = keyOf(r);
+    setOrderOverrides((prev) => {
+      const next = { ...prev };
+      delete next[k];
+      return next;
+    });
+  };
+
+  const hiddenCount = Object.keys(hiddenOrderItems).length;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <BranchPicker branch={branch} setBranch={setBranch} />
+        <label className="flex items-center gap-2 text-sm ml-2" style={{ color: "#5c5644" }}>
+          <input type="checkbox" checked={onlyNeed} onChange={(e) => setOnlyNeed(e.target.checked)} />
+          Chỉ hiện mã cần đặt
+        </label>
+        <label className="flex items-center gap-2 text-sm ml-2" style={{ color: C.danger }}>
+          <input type="checkbox" checked={onlyOutAssort} onChange={(e) => setOnlyOutAssort(e.target.checked)} />
+          Chỉ hiện mã ngoài Assortment
+        </label>
+        <label className="flex items-center gap-2 text-sm ml-2" style={{ color: "#5c5644" }}>
+          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
+          Hiện mã đã ẩn {hiddenCount > 0 && `(${hiddenCount})`}
+        </label>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo Mã hàng hoặc Tên hàng..."
+          className="text-sm ml-2"
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: `1px solid ${C.line}`,
+            minWidth: 220,
+          }}
+        />
+        <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>
+          {rows.length} mã hàng
+        </div>
+      </div>
+
+      <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full text-sm" style={{ minWidth: 1050 }}>
+          <thead>
+            <tr style={{ background: C.floorLight, color: "#5c5644" }}>
+              <Th>Chi nhánh</Th>
+              <Th>Mã hàng</Th>
+              <Th align="left">Tên hàng</Th>
+              <Th formula="Tổng SL bán 30 ngày ÷ 30">TB bán/ngày</Th>
+              <Th formula="TB bán/ngày × 7 (ngày dự phòng)">Tồn kho tối thiểu</Th>
+              <Th>Tồn hiện tại</Th>
+              <Th>SL/gói</Th>
+              <Th>Leadtime (ngày)</Th>
+              <Th formula="ROUNDUP((Tồn tối thiểu − Tồn hiện tại) ÷ SL/gói, 0), tối thiểu 1">SL cần đặt</Th>
+              <Th>Ẩn</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const k = keyOf(r);
+              const isOverridden = orderOverrides[k] !== undefined;
+              const hidden = isHidden(r);
+              return (
+                <tr
+                  key={k}
+                  style={{
+                    background: hidden ? "#f0efe9" : r.isOutOfAssortment ? C.dangerBg : i % 2 ? C.cream : "#fff",
+                    opacity: hidden ? 0.6 : 1,
+                  }}
+                >
+                  <Td>{r.branch}</Td>
+                  <Td mono>{r.ma}</Td>
+                  <Td align="left">
+                    {r.ten}
+                    {r.isOutOfAssortment && (
+                      <span
+                        title="Mã hàng này không nằm trong danh mục Assortment chính thức"
+                        style={{ color: C.danger, fontWeight: 700, fontSize: 11, marginLeft: 6 }}
+                      >
+                        ⚠ Ngoài Assortment
+                      </span>
+                    )}
+                    {hidden && (
+                      <span style={{ color: "#8a8272", fontWeight: 700, fontSize: 11, marginLeft: 6 }}>
+                        (đã ẩn)
+                      </span>
+                    )}
+                  </Td>
+                  <Td>{r.avgDay}</Td>
+                  <Td>{r.minStock}</Td>
+                  <Td>
+                    <span style={{ color: r.isLow ? C.danger : C.ink, fontWeight: r.isLow ? 700 : 400 }}>
+                      {r.current}
+                    </span>
+                  </Td>
+                  <Td>{r.packSize || "—"}</Td>
+                  <Td>{r.leadtime ?? "—"}</Td>
+                  <Td>
+                    {!hidden && (r.needQty > 0 || isOverridden) ? (
+                      <div className="flex items-center justify-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          value={effectiveQty(r)}
+                          onChange={(e) => handleQtyChange(r, e.target.value)}
+                          className="text-right"
+                          style={{
+                            width: 56,
+                            padding: "3px 6px",
+                            borderRadius: 6,
+                            border: `1px solid ${isOverridden ? C.amber : C.line}`,
+                            background: isOverridden ? C.floorLight : "#fff",
+                            fontWeight: 700,
+                            color: C.danger,
+                          }}
+                        />
+                        <span style={{ fontSize: 12, color: "#8a8272" }}>{r.packUnit}</span>
+                        {isOverridden && (
+                          <button
+                            onClick={() => resetQty(r)}
+                            title="Về lại số gợi ý tự động"
+                            style={{ color: "#8a8272", fontSize: 11, textDecoration: "underline" }}
+                          >
+                            reset
+                          </button>
+                        )}
+                      </div>
+                    ) : !hidden ? (
+                      <span style={{ color: C.ok }}>Đủ</span>
+                    ) : (
+                      <span style={{ color: "#8a8272" }}>—</span>
+                    )}
+                  </Td>
+                  <Td>
+                    {hidden ? (
+                      <button
+                        onClick={() => onToggleHidden(r.branch, r.ma, false)}
+                        title="Khôi phục, hiện lại mã này trong danh sách đặt hàng"
+                        style={{ color: C.ok, fontSize: 11, fontWeight: 700, textDecoration: "underline" }}
+                      >
+                        Khôi phục
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onToggleHidden(r.branch, r.ma, true)}
+                        title="Ẩn mã này khỏi danh sách đặt hàng (không xóa khỏi Assortment)"
+                        style={{ color: C.danger }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </Td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={10} className="text-center py-8" style={{ color: "#8a8272" }}>
+                  Không có dữ liệu phù hợp
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BranchPicker({ branch, setBranch, includeAll = true }) {
+  const opts = includeAll ? ["ALL", ...BRANCHES] : BRANCHES;
+  return (
+    <div className="flex gap-1 p-1 rounded-lg" style={{ background: C.floorLight }}>
+      {opts.map((b) => (
+        <button
+          key={b}
+          onClick={() => setBranch(b)}
+          className="px-3 py-1.5 rounded-md text-sm"
+          style={{
+            background: branch === b ? C.court : "transparent",
+            color: branch === b ? C.cream : "#5c5644",
+            fontWeight: 600,
+          }}
+        >
+          {b === "ALL" ? "Tất cả" : b}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Th({ children, align = "center", formula }) {
+  return (
+    <th className="px-3 py-2.5 text-xs font-semibold" style={{ textAlign: align }} title={formula || undefined}>
+      <div>{children}</div>
+      {formula && (
+        <div style={{ fontWeight: 400, fontSize: 10, color: "#a89f8a", marginTop: 2, whiteSpace: "nowrap" }}>
+          {formula}
+        </div>
+      )}
+    </th>
+  );
+}
+function Td({ children, align = "center", mono }) {
+  return (
+    <td
+      className="px-3 py-2 text-sm"
+      style={{ textAlign: align, fontFamily: mono ? "monospace" : "inherit", borderTop: `1px solid ${C.line}` }}
+    >
+      {children}
+    </td>
+  );
+}
+
+// ============================================================
+// ALERTS TAB
+// ============================================================
+function AlertsTab({ forecast }) {
+  const [branch, setBranch] = useState("ALL");
+  const [filterType, setFilterType] = useState("ALL"); // ALL | LOW | STALE
+  const [search, setSearch] = useState("");
+
+  const rows = forecast
+    .filter((f) => branch === "ALL" || f.branch === branch)
+    .filter((f) => f.isLow || f.isStale)
+    .filter((f) => {
+      if (filterType === "LOW") return f.isLow;
+      if (filterType === "STALE") return f.isStale;
+      return true;
+    })
+    .filter((f) => {
+      if (!search.trim()) return true;
+      const q = normalizeVN(search);
+      return normalizeVN(f.ma).includes(q) || normalizeVN(f.ten).includes(q);
+    })
+    .sort((a, b) => (b.isStale - a.isStale) || a.current - b.current);
+
+  const filterOpts = [
+    { id: "ALL", label: "Tất cả cảnh báo" },
+    { id: "LOW", label: "Tồn thấp" },
+    { id: "STALE", label: "Tồn lâu không bán" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <BranchPicker branch={branch} setBranch={setBranch} />
+        <div className="flex gap-1 p-1 rounded-lg ml-2" style={{ background: C.floorLight }}>
+          {filterOpts.map((o) => (
+            <button
+              key={o.id}
+              onClick={() => setFilterType(o.id)}
+              className="px-3 py-1.5 rounded-md text-sm"
+              style={{
+                background: filterType === o.id ? C.court : "transparent",
+                color: filterType === o.id ? C.cream : "#5c5644",
+                fontWeight: 600,
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo Mã hàng hoặc Tên hàng..."
+          className="text-sm ml-2"
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: `1px solid ${C.line}`,
+            minWidth: 220,
+          }}
+        />
+        <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>
+          {rows.length} mã hàng
+        </div>
+      </div>
+
+      <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full text-sm" style={{ minWidth: 900 }}>
+          <thead>
+            <tr style={{ background: C.floorLight, color: "#5c5644" }}>
+              <Th>Chi nhánh</Th>
+              <Th>Mã hàng</Th>
+              <Th align="left">Tên hàng</Th>
+              <Th>Tồn hiện tại</Th>
+              <Th>Tồn tối thiểu</Th>
+              <Th>Bán 30 ngày qua</Th>
+              <Th>Bán 60 ngày qua</Th>
+              <Th>Ngày chưa bán</Th>
+              <Th>Cảnh báo</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.branch + r.ma} style={{ background: i % 2 ? C.cream : "#fff" }}>
+                <Td>{r.branch}</Td>
+                <Td mono>{r.ma}</Td>
+                <Td align="left">{r.ten}</Td>
+                <Td>
+                  <span style={{ color: r.isLow ? C.danger : C.ink, fontWeight: r.isLow ? 700 : 400 }}>
+                    {r.current}
+                  </span>
+                </Td>
+                <Td>{r.minStock}</Td>
+                <Td>
+                  <YesNoBadge yes={r.soldIn30} />
+                </Td>
+                <Td>
+                  <YesNoBadge yes={r.soldIn60} />
+                </Td>
+                <Td>{r.daysSinceLastSale === null ? "> 30" : r.daysSinceLastSale}</Td>
+                <Td>
+                  <div className="flex gap-1 justify-center flex-wrap">
+                    {r.isLow && (
+                      <span style={{ background: C.dangerBg, color: C.danger, padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                        Tồn thấp
+                      </span>
+                    )}
+                    {r.isStale && (
+                      <span style={{ background: "#F7EBD8", color: C.amberDeep, padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                        Tồn lâu
+                      </span>
+                    )}
+                  </div>
+                </Td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={9} className="text-center py-8" style={{ color: C.ok }}>
+                  Không có cảnh báo nào 🎉
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+function YesNoBadge({ yes }) {
+  return (
+    <span style={{ color: yes ? C.ok : C.danger, fontWeight: 700 }}>
+      {yes ? "Có" : "Không"}
+    </span>
+  );
+}
+
+// ============================================================
+// PO TAB — tạo phiếu mua hàng theo NCC
+// ============================================================
+// Droplist chọn NCC + nút "Update" riêng - chọn trong dropdown chỉ là TẠM (chưa áp dụng),
+// bấm "Update" mới thật sự gán NCC cho mã hàng đó (qua onUpdate). Tách 2 bước để tránh gán
+// nhầm khi vô tình đổi ý giữa chừng, và để người dùng chủ động biết lúc nào đã "chốt".
+function SupplierPicker({ currentSupplier, knownSuppliers, onUpdate }) {
+  const [pending, setPending] = useState(currentSupplier || "");
+
+  // Nếu NCC hiện tại đổi từ bên ngoài (VD sau khi Update thành công, hoặc đổi mã hàng khác),
+  // đồng bộ lại giá trị đang chọn trong dropdown cho khớp.
+  useEffect(() => {
+    setPending(currentSupplier || "");
+  }, [currentSupplier]);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    if (val === "__NEW__") {
+      const name = window.prompt("Nhập tên NCC mới:");
+      if (name && name.trim()) setPending(name.trim());
+      return;
+    }
+    setPending(val);
+  };
+
+  const isUnknown = !currentSupplier;
+  const hasChange = pending && pending !== currentSupplier;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <select
+        value={knownSuppliers.includes(pending) ? pending : (pending ? "__NEW__" : "")}
+        onChange={handleChange}
+        style={{
+          padding: "3px 6px",
+          borderRadius: 6,
+          border: `1px solid ${isUnknown ? C.amber : C.line}`,
+          background: isUnknown ? C.floorLight : "#fff",
+          fontSize: 12,
+          maxWidth: 150,
+        }}
+      >
+        <option value="">-- Chọn NCC --</option>
+        {knownSuppliers.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+        <option value="__NEW__">+ Nhập NCC mới...</option>
+      </select>
+      {pending && !knownSuppliers.includes(pending) && (
+        <span style={{ fontSize: 11, color: "#8a8272" }}>({pending})</span>
+      )}
+      <button
+        onClick={() => hasChange && onUpdate(pending)}
+        disabled={!hasChange}
+        style={{
+          padding: "3px 10px",
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 700,
+          background: hasChange ? C.amber : C.floorLight,
+          color: hasChange ? C.courtDeep : "#b5ac96",
+          cursor: hasChange ? "pointer" : "default",
+        }}
+      >
+        Update
+      </button>
+    </div>
+  );
+}
+
+function PoTab({
+  forecast,
+  supplierMap,
+  onSave,
+  orderOverrides,
+  setOrderOverrides,
+  knownSuppliers,
+  onAssignSupplier,
+  hiddenOrderItems,
+  onToggleHidden,
+}) {
+  const [branch, setBranch] = useState(BRANCHES[0]);
+  // Chỉ lưu TÊN nhóm NCC đang xem (không lưu nguyên object) - để mỗi lần bySupplier tính lại
+  // (VD sau khi gán NCC mới), danh sách mã hàng hiển thị LUÔN LÀ MỚI NHẤT, không cần thoát
+  // ra vào lại tab mới thấy đúng.
+  const [selectedSupplierName, setSelectedSupplierName] = useState(null);
+  const [checkedItems, setCheckedItems] = useState({});
+  const [savedMsg, setSavedMsg] = useState("");
+  const [previewing, setPreviewing] = useState(false);
+  const poIdRef = useRef(null);
+
+  const keyOf = (it) => branch + "|" + it.ma;
+  const effectiveQty = (it) => {
+    const k = keyOf(it);
+    const v = orderOverrides[k];
+    return v !== undefined && v !== "" ? v : it.orderCases;
+  };
+  const handleQtyChange = (it, value) => {
+    const k = keyOf(it);
+    const n = value === "" ? "" : Math.max(0, Math.floor(Number(value) || 0));
+    setOrderOverrides((prev) => ({ ...prev, [k]: n }));
+  };
+
+  // Bỏ hẳn các mã đã bị "ẩn khỏi danh sách đặt hàng" (đặt ở tab Đặt hàng hoặc ngay tại đây) -
+  // không hiện trong bất kỳ nhóm NCC nào cả.
+  const needItems = forecast.filter(
+    (f) => f.branch === branch && f.needQty > 0 && !hiddenOrderItems[keyOf(f)]
+  );
+
+  const bySupplier = useMemo(() => {
+    const map = {};
+    needItems.forEach((it) => {
+      const s = supplierMap[branch + "|" + it.ma] || { supplier: "Chưa xác định NCC", supplierCode: "" };
+      const key = s.supplier;
+      if (!map[key]) map[key] = { supplier: s.supplier, items: [] };
+      map[key].items.push(it);
+    });
+    return Object.values(map).sort((a, b) => b.items.length - a.items.length);
+  }, [needItems, supplierMap, branch]);
+
+  // Lấy nhóm đang xem TỪ bySupplier MỚI NHẤT mỗi lần render, theo tên đã chọn.
+  const selectedSupplier = selectedSupplierName
+    ? bySupplier.find((s) => s.supplier === selectedSupplierName) || null
+    : null;
+
+  useEffect(() => {
+    setSelectedSupplierName(null);
+    setCheckedItems({});
+    setPreviewing(false);
+  }, [branch]);
+
+  const openSupplier = (s) => {
+    setSelectedSupplierName(s.supplier);
+    const init = {};
+    s.items.forEach((it) => (init[it.ma] = true));
+    setCheckedItems(init);
+    setSavedMsg("");
+    setPreviewing(false);
+  };
+
+  const finalItems = selectedSupplier ? selectedSupplier.items.filter((it) => checkedItems[it.ma]) : [];
+
+
+  const openPreview = () => {
+    poIdRef.current = "PO-" + Date.now();
+    setPreviewing(true);
+  };
+
+  const buildPo = () => ({
+    id: poIdRef.current || "PO-" + Date.now(),
+    createdAt: new Date().toISOString(),
+    branch,
+    supplier: selectedSupplier.supplier,
+    items: finalItems.map((it) => ({
+      ma: it.ma,
+      ten: it.ten,
+      dvt: it.packUnit,
+      soLuong: effectiveQty(it),
+    })),
+  });
+
+  const saveToHistory = async () => {
+    const po = buildPo();
+    const image = drawPoImage(po);
+    await onSave({ ...po, image });
+    setSavedMsg("Đã lưu phiếu vào Lịch sử PO ✓");
+    setPreviewing(false);
+    setSelectedSupplierName(null);
+    setCheckedItems({});
+  };
+
+  if (previewing && selectedSupplier) {
+    return (
+      <PoPreview
+        po={buildPo()}
+        onBack={() => setPreviewing(false)}
+        onSave={saveToHistory}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <BranchPicker branch={branch} setBranch={setBranch} includeAll={false} />
+        {savedMsg && <span style={{ color: C.ok, fontSize: 13, fontWeight: 600 }}>{savedMsg}</span>}
+      </div>
+
+      {!selectedSupplier ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {bySupplier.map((s) => {
+            const isUnknown = s.supplier === "Chưa xác định NCC";
+            return (
+              <button
+                key={s.supplier}
+                onClick={() => openSupplier(s)}
+                className="text-left rounded-xl p-4"
+                style={{
+                  background: isUnknown ? C.dangerBg : "#fff",
+                  border: `1px solid ${isUnknown ? C.danger : C.line}`,
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div style={{ fontWeight: 700, fontSize: 15, color: isUnknown ? C.danger : C.ink }}>
+                    {isUnknown && "⚠ "}{s.supplier}
+                  </div>
+                  <ChevronRight size={18} color={isUnknown ? C.danger : C.floor} />
+                </div>
+                <div style={{ fontSize: 13, color: isUnknown ? C.danger : "#8a8272", marginTop: 4 }}>
+                  {s.items.length} mã hàng cần đặt{isUnknown && " · bấm vào để gán NCC"}
+                </div>
+              </button>
+            );
+          })}
+          {bySupplier.length === 0 && (
+            <div className="col-span-full text-center py-8 rounded-xl" style={{ background: C.okBg, color: C.ok }}>
+              {branch} hiện không có mã hàng nào cần đặt thêm 🎉
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+          <div className="flex items-center justify-between mb-3">
+            <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 16 }}>
+              PO cho: {selectedSupplier.supplier} · {branch}
+            </div>
+            <button onClick={() => setSelectedSupplierName(null)}>
+              <X size={18} />
+            </button>
+          </div>
+          <table className="w-full text-sm mb-3">
+            <thead>
+              <tr style={{ background: C.floorLight }}>
+                <Th align="left">✓</Th>
+                <Th>Mã hàng</Th>
+                <Th align="left">Tên hàng</Th>
+                <Th align="left">NCC</Th>
+                <Th>SL cần đặt</Th>
+                <Th>Xóa</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedSupplier.items.map((it) => (
+                <tr key={it.ma} style={{ background: it.isOutOfAssortment ? C.dangerBg : "transparent" }}>
+                  <Td align="left">
+                    <input
+                      type="checkbox"
+                      checked={!!checkedItems[it.ma]}
+                      onChange={(e) => setCheckedItems({ ...checkedItems, [it.ma]: e.target.checked })}
+                    />
+                  </Td>
+                  <Td mono>{it.ma}</Td>
+                  <Td align="left">
+                    {it.ten}
+                    {it.isOutOfAssortment && (
+                      <span
+                        title="Mã hàng này không nằm trong danh mục Assortment chính thức"
+                        style={{ color: C.danger, fontWeight: 700, fontSize: 11, marginLeft: 6 }}
+                      >
+                        ⚠ Ngoài Assortment
+                      </span>
+                    )}
+                  </Td>
+                  <Td align="left">
+                    <SupplierPicker
+                      currentSupplier={selectedSupplier.supplier === "Chưa xác định NCC" ? "" : selectedSupplier.supplier}
+                      knownSuppliers={knownSuppliers}
+                      onUpdate={(name) => onAssignSupplier(branch, it.ma, name)}
+                    />
+                  </Td>
+                  <Td>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        value={effectiveQty(it)}
+                        onChange={(e) => handleQtyChange(it, e.target.value)}
+                        className="text-right"
+                        style={{ width: 56, padding: "3px 6px", borderRadius: 6, border: `1px solid ${C.line}`, fontWeight: 700 }}
+                      />
+                      <span style={{ fontSize: 12, color: "#8a8272" }}>{it.packUnit}</span>
+                    </div>
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={() => onToggleHidden(branch, it.ma, true)}
+                      title="Ẩn mã này khỏi danh sách đặt hàng (không xóa khỏi Assortment) - mã sẽ biến mất khỏi đây ngay"
+                      style={{ color: C.danger }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            onClick={openPreview}
+            disabled={finalItems.length === 0}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm"
+            style={{ background: C.amber, color: C.courtDeep, fontWeight: 700, opacity: finalItems.length ? 1 : 0.5 }}
+          >
+            <FileText size={16} /> Xem trước phiếu ({finalItems.length} mã)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Xem trước PO dạng phiếu chuyên nghiệp, có nút In/Xuất PDF (dùng window.print + CSS
+// @media print để chỉ in đúng vùng phiếu) và nút lưu vào lịch sử.
+function PoPreview({ po, onBack, onSave }) {
+  const total = po.items.length;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 po-no-print">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm"
+          style={{ background: C.floorLight, fontWeight: 600 }}
+        >
+          <X size={16} /> Đóng xem trước
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
+          style={{ background: C.court, color: C.cream, fontWeight: 700 }}
+        >
+          <FileText size={16} /> In / Xuất PDF
+        </button>
+        <button
+          onClick={onSave}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
+          style={{ background: C.amber, color: C.courtDeep, fontWeight: 700 }}
+        >
+          <Camera size={16} /> Lưu vào lịch sử
+        </button>
+      </div>
+
+      <div
+        className="po-print-area rounded-xl mx-auto"
+        style={{ background: "#fff", border: `1px solid ${C.line}`, maxWidth: 800, width: "100%", padding: 40 }}
+      >
+        <div className="flex items-start justify-between" style={{ borderBottom: `3px solid ${C.court}`, paddingBottom: 16, marginBottom: 24 }}>
+          <div>
+            <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 18, color: C.court }}>
+              Hệ thống sân thể thao Arena
+            </div>
+          </div>
+          <div className="text-right">
+            <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 18 }}>
+              PHIẾU ĐỀ NGHỊ MUA HÀNG
+            </div>
+            <div style={{ fontSize: 12, color: "#8a8272", marginTop: 2 }}>{po.id}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-6" style={{ fontSize: 13 }}>
+          <div><b>Chi nhánh:</b> {po.branch}</div>
+          <div><b>Ngày lập:</b> {new Date(po.createdAt).toLocaleDateString("vi-VN")}</div>
+          <div><b>Nhà cung cấp:</b> {po.supplier}</div>
+          <div><b>Số mã hàng:</b> {total}</div>
+        </div>
+
+        <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: C.floorLight }}>
+              <th style={{ border: `1px solid ${C.line}`, padding: "8px 10px", fontSize: 12 }}>STT</th>
+              <th style={{ border: `1px solid ${C.line}`, padding: "8px 10px", fontSize: 12 }}>Mã hàng</th>
+              <th style={{ border: `1px solid ${C.line}`, padding: "8px 10px", fontSize: 12, textAlign: "left" }}>Tên hàng</th>
+              <th style={{ border: `1px solid ${C.line}`, padding: "8px 10px", fontSize: 12 }}>SL</th>
+              <th style={{ border: `1px solid ${C.line}`, padding: "8px 10px", fontSize: 12 }}>ĐVT</th>
+              <th style={{ border: `1px solid ${C.line}`, padding: "8px 10px", fontSize: 12 }}>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.items.map((it, i) => (
+              <tr key={it.ma}>
+                <td style={{ border: `1px solid ${C.line}`, padding: "6px 10px", textAlign: "center" }}>{i + 1}</td>
+                <td style={{ border: `1px solid ${C.line}`, padding: "6px 10px", textAlign: "center", fontFamily: "monospace" }}>{it.ma}</td>
+                <td style={{ border: `1px solid ${C.line}`, padding: "6px 10px" }}>{it.ten}</td>
+                <td style={{ border: `1px solid ${C.line}`, padding: "6px 10px", textAlign: "center", fontWeight: 700 }}>{it.soLuong}</td>
+                <td style={{ border: `1px solid ${C.line}`, padding: "6px 10px", textAlign: "center" }}>{it.dvt}</td>
+                <td style={{ border: `1px solid ${C.line}`, padding: "6px 10px" }}></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="grid grid-cols-3 gap-4 text-center" style={{ marginTop: 56, fontSize: 13 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>Người lập phiếu</div>
+            <div style={{ color: "#8a8272", fontSize: 11 }}>(Ký, ghi rõ họ tên)</div>
+            <div style={{ height: 64 }} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700 }}>Người duyệt</div>
+            <div style={{ color: "#8a8272", fontSize: 11 }}>(Ký, ghi rõ họ tên)</div>
+            <div style={{ height: 64 }} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700 }}>Nhà cung cấp xác nhận</div>
+            <div style={{ color: "#8a8272", fontSize: 11 }}>(Ký, ghi rõ họ tên)</div>
+            <div style={{ height: 64 }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Vẽ PO thành ảnh PNG (canvas) — thay thế "chụp màn hình" mà không cần thư viện ngoài
+function drawPoImage(po) {
+  const rowH = 26;
+  const width = 640;
+  const height = 170 + po.items.length * rowH + 40;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#FBF8F1";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "#1B4332";
+  ctx.fillRect(0, 0, width, 70);
+  ctx.fillStyle = "#FBF8F1";
+  ctx.font = "bold 20px Arial";
+  ctx.fillText("PHIẾU ĐỀ NGHỊ MUA HÀNG", 20, 32);
+  ctx.font = "13px Arial";
+  ctx.fillText(po.id, 20, 54);
+
+  ctx.fillStyle = "#13261C";
+  ctx.font = "13px Arial";
+  ctx.fillText("Chi nhánh: " + po.branch, 20, 92);
+  ctx.fillText("Nhà cung cấp: " + po.supplier, 20, 112);
+  ctx.fillText("Ngày tạo: " + new Date(po.createdAt).toLocaleString("vi-VN"), 20, 132);
+
+  let y = 155;
+  ctx.fillStyle = "#C9A66B";
+  ctx.fillRect(20, y, width - 40, 24);
+  ctx.fillStyle = "#13261C";
+  ctx.font = "bold 12px Arial";
+  ctx.fillText("Mã hàng", 28, y + 16);
+  ctx.fillText("Tên hàng", 130, y + 16);
+  ctx.fillText("SL", width - 80, y + 16);
+  y += 24;
+
+  ctx.font = "12px Arial";
+  po.items.forEach((it, i) => {
+    if (i % 2 === 0) {
+      ctx.fillStyle = "#F3E9D2";
+      ctx.fillRect(20, y, width - 40, rowH);
+    }
+    ctx.fillStyle = "#13261C";
+    ctx.fillText(it.ma, 28, y + 17);
+    ctx.fillText((it.ten || "").slice(0, 42), 130, y + 17);
+    ctx.fillText(String(it.soLuong) + " " + (it.dvt || ""), width - 80, y + 17);
+    y += rowH;
+  });
+
+  ctx.strokeStyle = "#E4DCC8";
+  ctx.strokeRect(10, 10, width - 20, height - 20);
+
+  return canvas.toDataURL("image/png");
+}
+
+// ============================================================
+// HISTORY TAB
+// ============================================================
+function AssortmentTab({ assortment, salesMap, status, message, onImportFile, onDelete }) {
+  const fileInputRef = useRef(null);
+  const [search, setSearch] = useState("");
+  const [deletingMa, setDeletingMa] = useState(null);
+
+  const rows = assortment
+    .filter((row) => {
+      if (!search.trim()) return true;
+      const q = normalizeVN(search);
+      return normalizeVN(row["Mã hàng"]).includes(q) || normalizeVN(row["Tên hàng"]).includes(q);
+    })
+    .sort((a, b) => (a["Mã hàng"] || "").localeCompare(b["Mã hàng"] || ""));
+
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (file) onImportFile(file);
+  };
+
+  const handleDelete = async (ma) => {
+    if (!window.confirm(`Xóa mã "${ma}" khỏi Assortment? Mã này sẽ được coi là "ngoài assortment" sau khi xóa.`)) {
+      return;
+    }
+    setDeletingMa(ma);
+    await onDelete(ma);
+    setDeletingMa(null);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Danh mục Assortment</div>
+        <div style={{ fontSize: 13, color: "#8a8272", marginBottom: 10 }}>
+          Đây là danh sách mã hàng CHÍNH THỨC được đặt hàng định kỳ. Mã hàng nào KHÔNG có trong
+          danh sách này sẽ bị cảnh báo "⚠ Ngoài Assortment" ở tab Đặt hàng và Tạo PO.
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+          <button
+            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+            disabled={status === "loading"}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm"
+            style={{
+              background: status === "error" ? C.dangerBg : status === "done" ? C.okBg : C.amber,
+              color: status === "error" ? C.danger : status === "done" ? C.ok : C.courtDeep,
+              fontWeight: 700,
+            }}
+          >
+            <Download size={16} className={status === "loading" ? "animate-spin" : ""} />
+            {status === "loading" ? "Đang cập nhật..." : "Cập nhật Assortment (chọn file Excel)"}
+          </button>
+          <span style={{ fontSize: 12, color: "#8a8272" }}>
+            Chọn file "Working File" đã tải từ hệ thống — tự đọc đúng sheet, ghi đè toàn bộ danh sách hiện tại.
+          </span>
+        </div>
+        {message && (
+          <div style={{ marginTop: 8, fontSize: 13, color: status === "error" ? C.danger : C.ok }}>{message}</div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo Mã hàng hoặc Tên hàng..."
+          className="text-sm"
+          style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.line}`, minWidth: 220 }}
+        />
+        <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>
+          {rows.length} / {assortment.length} mã hàng
+        </div>
+      </div>
+
+      <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ background: C.floorLight, color: "#5c5644" }}>
+              <Th>Mã hàng</Th>
+              <Th align="left">Tên hàng</Th>
+              <Th>Quy cách đóng gói</Th>
+              <Th>Leadtime (ngày)</Th>
+              <Th formula="Tổng tồn hiện tại cả 3 chi nhánh">Tồn hiện tại (3 CN)</Th>
+              <Th formula="Tổng SL bán 30 ngày qua, cả 3 chi nhánh">Bán 30 ngày (3 CN)</Th>
+              <Th formula="Bán 30 ngày (3 CN) ÷ 30">TB bán/ngày (3 CN)</Th>
+              <Th>Xóa</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              const ma = row["Mã hàng"];
+              const sales = salesMap[ma] || { qty30: 0, current: 0 };
+              const avgDay = Math.round((sales.qty30 / 30) * 10) / 10;
+              return (
+                <tr key={ma} style={{ background: i % 2 ? C.cream : "#fff" }}>
+                  <Td mono>{ma}</Td>
+                  <Td align="left">{row["Tên hàng"]}</Td>
+                  <Td>{row["Quy cách đóng gói"] || "—"}</Td>
+                  <Td>{row["Leadtime giao hàng (ngày)"] || "—"}</Td>
+                  <Td>{sales.current}</Td>
+                  <Td>{sales.qty30}</Td>
+                  <Td>{avgDay}</Td>
+                  <Td>
+                    <button
+                      onClick={() => handleDelete(ma)}
+                      disabled={deletingMa === ma}
+                      title="Xóa mã này khỏi Assortment"
+                      style={{ color: C.danger, opacity: deletingMa === ma ? 0.4 : 1 }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </Td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7} className="text-center py-8" style={{ color: "#8a8272" }}>
+                  {assortment.length === 0
+                    ? 'Chưa có danh mục Assortment nào - bấm "Cập nhật Assortment" ở trên để tải lên lần đầu.'
+                    : "Không có mã hàng phù hợp"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function HistoryTab({ history, onDelete }) {
+  const [viewing, setViewing] = useState(null);
+
+  if (history.length === 0) {
+    return (
+      <div className="text-center py-16" style={{ color: "#8a8272" }}>
+        <FileText size={40} color={C.floor} style={{ margin: "0 auto" }} />
+        <div style={{ marginTop: 12 }}>Chưa có phiếu PO nào được lưu</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {history.map((po) => (
+        <div key={po.id} className="rounded-xl overflow-hidden" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+          <img
+            src={po.image}
+            alt={po.id}
+            className="w-full cursor-pointer"
+            style={{ borderBottom: `1px solid ${C.line}` }}
+            onClick={() => setViewing(po)}
+          />
+          <div className="p-3">
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{po.branch} · {po.supplier}</div>
+            <div style={{ fontSize: 12, color: "#8a8272" }}>
+              {new Date(po.createdAt).toLocaleString("vi-VN")} · {po.items.length} mã hàng
+            </div>
+            <div className="flex gap-2 mt-2">
+              <a
+                href={po.image}
+                download={po.id + ".png"}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md"
+                style={{ background: C.floorLight }}
+              >
+                <Download size={13} /> Tải ảnh
+              </a>
+              <button
+                onClick={() => onDelete(po.id)}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md"
+                style={{ background: C.dangerBg, color: C.danger }}
+              >
+                <Trash2 size={13} /> Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {viewing && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-6 z-50"
+          style={{ background: "rgba(13,40,24,0.7)" }}
+          onClick={() => setViewing(null)}
+        >
+          <img src={viewing.image} alt={viewing.id} style={{ maxWidth: "100%", maxHeight: "90vh", borderRadius: 8 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+
+<script>
+  // Tự gọi Babel transform (thay vì để Babel tự quét <script type="text/babel">),
+  // để chỉ định rõ runtime: "classic" — dùng React.createElement thay vì tự động
+  // "import { jsx } from react/jsx-runtime" (mặc định của Babel bản mới), vì trang
+  // này dùng React qua CDN dạng global, không phải ES module.
+  const sourceCode = document.getElementById("app-source").textContent;
+  const output = Babel.transform(sourceCode, {
+    presets: [["react", { runtime: "classic" }]],
+  }).code;
+  const script = document.createElement("script");
+  script.textContent = output;
+  document.body.appendChild(script);
+</script>
+</body>
+</html>
