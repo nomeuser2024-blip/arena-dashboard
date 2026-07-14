@@ -1191,6 +1191,15 @@ function ForecastTab({
     });
   };
 
+  const overrideCount = Object.keys(orderOverrides).length;
+  const resetAllQty = () => {
+    if (overrideCount === 0) return;
+    if (!window.confirm(`Đặt lại toàn bộ ${overrideCount} mã đã sửa tay về đúng số gợi ý tự động (theo ${bufferDays} ngày dự phòng đang chọn)?`)) {
+      return;
+    }
+    setOrderOverrides({});
+  };
+
   const hiddenCount = Object.keys(hiddenOrderItems).length;
 
   return (
@@ -1219,6 +1228,16 @@ function ForecastTab({
         <span style={{ fontSize: 12, color: "#8a8272" }}>
           (Tồn kho tối thiểu = TB bán/ngày × số ngày này — chọn nhiều ngày hơn sẽ ra SL cần đặt lớn hơn, phù hợp nếu leadtime NCC lâu)
         </span>
+        {overrideCount > 0 && (
+          <button
+            onClick={resetAllQty}
+            className="ml-auto text-sm px-3 py-1.5 rounded-lg"
+            style={{ color: C.danger, border: `1px solid ${C.danger}`, fontWeight: 600 }}
+            title="Xóa hết các lần sửa tay số lượng, quay về đúng số tự động tính theo bufferDays hiện tại"
+          >
+            Đặt lại {overrideCount} mã đã sửa tay
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
