@@ -149,7 +149,11 @@ const BRANCHES = ["ARENA.01", "ARENA.02", "ARENA.03"];
 // dùng import tay qua dashboard cho CẢ 3 chi nhánh, kể cả ARENA.01.
 const IMPORT_BRANCHES = ["ARENA.01", "ARENA.02", "ARENA.03"];
 const LOOKBACK_DAYS = 30;
-const BUFFER_DAYS = 7;
+// BUFFER_DAYS giờ CHỌN ĐƯỢC trên dashboard (7/14/21/28 ngày) thay vì cố định 7 - xem state
+// bufferDays trong App() và UI chọn trong ForecastTab. Hằng số này chỉ còn là GIÁ TRỊ MẶC
+// ĐỊNH ban đầu (lần đầu mở dashboard, chưa từng chọn gì).
+const BUFFER_DAYS_OPTIONS = [7, 14, 21, 28];
+const DEFAULT_BUFFER_DAYS = 7;
 const STALE_DAYS = 30;
 
 // ============================================================
@@ -318,6 +322,9 @@ function App() {
   // "branch|mã hàng" -> true. Không đụng gì tới Assortment (đây chỉ là "tạm thời không muốn
   // đặt mã này", khác với "mã này không thuộc danh mục chính thức").
   const [hiddenOrderItems, setHiddenOrderItems] = useState({});
+  // Số ngày dự phòng dùng để tính Tồn kho tối thiểu (7/14/21/28 ngày) - chọn được trên
+  // dashboard (xem ForecastTab), lưu lại lựa chọn trên trình duyệt.
+  const [bufferDays, setBufferDays] = useState(DEFAULT_BUFFER_DAYS);
 
   useEffect(() => {
     (async () => {
@@ -327,7 +334,14 @@ function App() {
       setSupplierOverrides(sup);
       const hidden = await loadJSON("hidden-order-items", {});
       setHiddenOrderItems(hidden);
+      const buf = await loadJSON("buffer-days", DEFAULT_BUFFER_DAYS);
+      setBufferDays(BUFFER_DAYS_OPTIONS.includes(buf) ? buf : DEFAULT_BUFFER_DAYS);
     })();
+  }, []);
+
+  const changeBufferDays = useCallback((days) => {
+    setBufferDays(days);
+    saveJSON("buffer-days", days);
   }, []);
 
   const assignSupplier = useCallback((branch, ma, supplierName) => {
@@ -702,7 +716,7 @@ function App() {
         const key = branch + "|" + ma;
         const sale = salesMap[key] || { qty30: 0, qty60: 0, lastDate: null };
         const avgDay = sale.qty30 > 0 ? Math.ceil(sale.qty30 / LOOKBACK_DAYS) : 0;
-        const minStock = Math.ceil(avgDay * BUFFER_DAYS);
+        const minStock = Math.ceil(avgDay * bufferDays);
         // Tồn kho hiện tại đôi khi có giá trị âm/lẻ bất thường (lỗi dữ liệu nguồn, VD do quy đổi
         // đơn vị) -> chặn về tối thiểu 0, tránh needQty bị tính sai thành số lẻ khó hiểu.
         const rawCurrent = Number(t["Tồn kho hiện tại"] || 0);
@@ -743,7 +757,7 @@ function App() {
           isOutOfAssortment: assortmentSet.size > 0 && !assortmentSet.has(ma),
         };
       });
-  }, [data, assortmentSet, assortmentInfoMap]);
+  }, [data, assortmentSet, assortmentInfoMap, bufferDays]);
 
   // Gộp doanh số 30 ngày qua (TỔNG CẢ 3 CHI NHÁNH) theo từng Mã hàng - dùng để hiển thị
   // nhanh trong tab Assortment, khỏi phải mở tab Đặt hàng mới xem được đang bán chạy/chậm.
@@ -838,6 +852,8 @@ function App() {
             setOrderOverrides={setOrderOverrides}
             hiddenOrderItems={hiddenOrderItems}
             onToggleHidden={toggleHiddenOrderItem}
+            bufferDays={bufferDays}
+            onChangeBufferDays={changeBufferDays}
           />
         )}
         {tab === "alerts" && <AlertsTab forecast={forecast} />}
@@ -1127,7 +1143,15 @@ function Dashboard({ distinctInvoices, forecast }) {
 // ============================================================
 // FORECAST TAB (Đặt hàng)
 // ============================================================
-function ForecastTab({ forecast, orderOverrides, setOrderOverrides, hiddenOrderItems, onToggleHidden }) {
+function ForecastTab({
+  forecast,
+  orderOverrides,
+  setOrderOverrides,
+  hiddenOrderItems,
+  onToggleHidden,
+  bufferDays,
+  onChangeBufferDays,
+}) {
   const [branch, setBranch] = useState("ALL");
   const [onlyNeed, setOnlyNeed] = useState(true);
   const [onlyOutAssort, setOnlyOutAssort] = useState(false);
@@ -1171,6 +1195,32 @@ function ForecastTab({ forecast, orderOverrides, setOrderOverrides, hiddenOrderI
 
   return (
     <div className="flex flex-col gap-3">
+      <div
+        className="flex flex-wrap items-center gap-2 p-3 rounded-xl"
+        style={{ background: "#fff", border: `1px solid ${C.line}` }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#5c5644" }}>Số ngày dự phòng khi tính đặt hàng:</span>
+        <div className="flex gap-1 p-1 rounded-lg" style={{ background: C.floorLight }}>
+          {BUFFER_DAYS_OPTIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => onChangeBufferDays(d)}
+              className="px-3 py-1.5 rounded-md text-sm"
+              style={{
+                background: bufferDays === d ? C.court : "transparent",
+                color: bufferDays === d ? C.cream : "#5c5644",
+                fontWeight: 700,
+              }}
+            >
+              {d} ngày
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: "#8a8272" }}>
+          (Tồn kho tối thiểu = TB bán/ngày × số ngày này — chọn nhiều ngày hơn sẽ ra SL cần đặt lớn hơn, phù hợp nếu leadtime NCC lâu)
+        </span>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <BranchPicker branch={branch} setBranch={setBranch} />
         <label className="flex items-center gap-2 text-sm ml-2" style={{ color: "#5c5644" }}>
@@ -1211,7 +1261,7 @@ function ForecastTab({ forecast, orderOverrides, setOrderOverrides, hiddenOrderI
               <Th>Mã hàng</Th>
               <Th align="left">Tên hàng</Th>
               <Th formula="Tổng SL bán 30 ngày ÷ 30">TB bán/ngày</Th>
-              <Th formula="TB bán/ngày × 7 (ngày dự phòng)">Tồn kho tối thiểu</Th>
+              <Th formula={`TB bán/ngày × ${bufferDays} (ngày dự phòng đang chọn)`}>Tồn kho tối thiểu</Th>
               <Th>Tồn hiện tại</Th>
               <Th>SL/gói</Th>
               <Th>Leadtime (ngày)</Th>
