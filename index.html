@@ -868,6 +868,8 @@ function App() {
             onAssignSupplier={assignSupplier}
             hiddenOrderItems={hiddenOrderItems}
             onToggleHidden={toggleHiddenOrderItem}
+            bufferDays={bufferDays}
+            onChangeBufferDays={changeBufferDays}
           />
         )}
         {tab === "history" && <HistoryTab history={poHistory} onDelete={deletePo} />}
@@ -1200,6 +1202,40 @@ function ForecastTab({
     setOrderOverrides({});
   };
 
+  // Tải bảng đang hiển thị (đúng theo filter hiện tại) ra file Excel về máy - dùng SheetJS,
+  // xử lý hoàn toàn trong trình duyệt, không gửi dữ liệu đi đâu cả.
+  const exportExcel = () => {
+    const exportRows = rows.map((r) => ({
+      "Chi nhánh": r.branch,
+      "Mã hàng": r.ma,
+      "Tên hàng": r.ten,
+      "TB bán/ngày": r.avgDay,
+      "Tồn kho tối thiểu": r.minStock,
+      "Tồn hiện tại": r.current,
+      "SL/gói": r.packSize,
+      "Đơn vị": r.packUnit,
+      "Leadtime (ngày)": r.leadtime ?? "",
+      "SL cần đặt": effectiveQty(r),
+      "Ngoài Assortment": r.isOutOfAssortment ? "Có" : "",
+      "Đã ẩn": isHidden(r) ? "Có" : "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "DatHang");
+
+    const now = new Date();
+    const stamp =
+      String(now.getDate()).padStart(2, "0") +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      now.getFullYear() +
+      "-" +
+      String(now.getHours()).padStart(2, "0") +
+      String(now.getMinutes()).padStart(2, "0");
+
+    XLSX.writeFile(wb, `DatHang_${bufferDays}ngay_${stamp}.xlsx`);
+  };
+
   const hiddenCount = Object.keys(hiddenOrderItems).length;
 
   return (
@@ -1267,7 +1303,20 @@ function ForecastTab({
             minWidth: 220,
           }}
         />
-        <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>
+        <button
+          onClick={exportExcel}
+          disabled={rows.length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ml-auto"
+          style={{
+            background: rows.length ? C.amber : C.floorLight,
+            color: rows.length ? C.courtDeep : "#b5ac96",
+            fontWeight: 700,
+          }}
+          title="Tải bảng đang hiển thị (đúng theo bộ lọc hiện tại) ra file Excel"
+        >
+          <Download size={14} /> Tải Excel
+        </button>
+        <div className="text-sm" style={{ color: "#8a8272" }}>
           {rows.length} mã hàng
         </div>
       </div>
@@ -1663,6 +1712,8 @@ function PoTab({
   onAssignSupplier,
   hiddenOrderItems,
   onToggleHidden,
+  bufferDays,
+  onChangeBufferDays,
 }) {
   const [branch, setBranch] = useState(BRANCHES[0]);
   // Chỉ lưu TÊN nhóm NCC đang xem (không lưu nguyên object) - để mỗi lần bySupplier tính lại
@@ -1725,6 +1776,25 @@ function PoTab({
 
   const finalItems = selectedSupplier ? selectedSupplier.items.filter((it) => checkedItems[it.ma]) : [];
 
+  const supplierOverrideCount = selectedSupplier
+    ? selectedSupplier.items.filter((it) => orderOverrides[keyOf(it)] !== undefined).length
+    : 0;
+
+  const resetSupplierQty = () => {
+    if (!selectedSupplier || supplierOverrideCount === 0) return;
+    if (
+      !window.confirm(
+        `Đặt lại ${supplierOverrideCount} mã đã sửa tay (của NCC này) về đúng số gợi ý tự động theo ${bufferDays} ngày dự phòng?`
+      )
+    ) {
+      return;
+    }
+    setOrderOverrides((prev) => {
+      const next = { ...prev };
+      selectedSupplier.items.forEach((it) => delete next[keyOf(it)]);
+      return next;
+    });
+  };
 
   const openPreview = () => {
     poIdRef.current = "PO-" + Date.now();
@@ -1813,6 +1883,45 @@ function PoTab({
               <X size={18} />
             </button>
           </div>
+
+          <div
+            className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg mb-3"
+            style={{ background: C.floorLight }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#5c5644" }}>
+              Muốn đặt nhiều hơn NCC này? Đổi số ngày dự phòng:
+            </span>
+            <div className="flex gap-1 p-1 rounded-lg" style={{ background: "#fff" }}>
+              {BUFFER_DAYS_OPTIONS.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => onChangeBufferDays(d)}
+                  className="px-2.5 py-1 rounded-md text-xs"
+                  style={{
+                    background: bufferDays === d ? C.court : "transparent",
+                    color: bufferDays === d ? C.cream : "#5c5644",
+                    fontWeight: 700,
+                  }}
+                >
+                  {d} ngày
+                </button>
+              ))}
+            </div>
+            <span style={{ fontSize: 11, color: "#8a8272" }}>
+              (SL cần đặt bên dưới tự nhảy lại theo số ngày mới ngay lập tức)
+            </span>
+            {supplierOverrideCount > 0 && (
+              <button
+                onClick={resetSupplierQty}
+                className="ml-auto text-xs px-2.5 py-1 rounded-md"
+                style={{ color: C.danger, border: `1px solid ${C.danger}`, fontWeight: 600 }}
+                title="Chỉ đặt lại các mã của NCC này (không đụng NCC khác)"
+              >
+                Đặt lại {supplierOverrideCount} mã đã sửa tay (NCC này)
+              </button>
+            )}
+          </div>
+
           <table className="w-full text-sm mb-3">
             <thead>
               <tr style={{ background: C.floorLight }}>
