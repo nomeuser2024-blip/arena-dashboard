@@ -734,11 +734,13 @@ function App() {
         const packUnit = PACK_UNIT_MAP[ma] || "thùng";
         const leadtime = (assortInfo && assortInfo.leadtime != null) ? assortInfo.leadtime : (LEADTIME_MAP[ma] ?? null);
         const dSince = daysAgo(sale.lastDate, now);
+        const giaVon = Number(t["Giá vốn"] || 0);
         return {
           branch,
           ma,
           ten: t["Tên hàng"],
           dvt: t["ĐVT"] || "",
+          giaVon,
           soldQty30: sale.qty30,
           soldQty60: sale.qty60,
           avgDay,
@@ -854,6 +856,7 @@ function App() {
             onToggleHidden={toggleHiddenOrderItem}
             bufferDays={bufferDays}
             onChangeBufferDays={changeBufferDays}
+            supplierMap={supplierMap}
           />
         )}
         {tab === "alerts" && <AlertsTab forecast={forecast} />}
@@ -1153,6 +1156,7 @@ function ForecastTab({
   onToggleHidden,
   bufferDays,
   onChangeBufferDays,
+  supplierMap,
 }) {
   const [branch, setBranch] = useState("ALL");
   const [onlyNeed, setOnlyNeed] = useState(true);
@@ -1209,6 +1213,7 @@ function ForecastTab({
       "Chi nhánh": r.branch,
       "Mã hàng": r.ma,
       "Tên hàng": r.ten,
+      "NCC": (supplierMap[keyOf(r)] && supplierMap[keyOf(r)].supplier) || "Chưa xác định",
       "TB bán/ngày": r.avgDay,
       "Tồn kho tối thiểu": r.minStock,
       "Tồn hiện tại": r.current,
@@ -1328,6 +1333,7 @@ function ForecastTab({
               <Th>Chi nhánh</Th>
               <Th>Mã hàng</Th>
               <Th align="left">Tên hàng</Th>
+              <Th align="left">NCC</Th>
               <Th formula="Tổng SL bán 30 ngày ÷ 30">TB bán/ngày</Th>
               <Th formula={`TB bán/ngày × ${bufferDays} (ngày dự phòng đang chọn)`}>Tồn kho tối thiểu</Th>
               <Th>Tồn hiện tại</Th>
@@ -1366,6 +1372,11 @@ function ForecastTab({
                       <span style={{ color: "#8a8272", fontWeight: 700, fontSize: 11, marginLeft: 6 }}>
                         (đã ẩn)
                       </span>
+                    )}
+                  </Td>
+                  <Td align="left">
+                    {(supplierMap[k] && supplierMap[k].supplier) || (
+                      <span style={{ color: C.danger, fontSize: 12 }}>⚠ Chưa xác định</span>
                     )}
                   </Td>
                   <Td>{r.avgDay}</Td>
@@ -1437,7 +1448,7 @@ function ForecastTab({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center py-8" style={{ color: "#8a8272" }}>
+                <td colSpan={11} className="text-center py-8" style={{ color: "#8a8272" }}>
                   Không có dữ liệu phù hợp
                 </td>
               </tr>
@@ -1723,6 +1734,7 @@ function PoTab({
   const [checkedItems, setCheckedItems] = useState({});
   const [savedMsg, setSavedMsg] = useState("");
   const [previewing, setPreviewing] = useState(false);
+  const [viewingSummary, setViewingSummary] = useState(false);
   const poIdRef = useRef(null);
 
   const keyOf = (it) => branch + "|" + it.ma;
@@ -1742,6 +1754,23 @@ function PoTab({
   const needItems = forecast.filter(
     (f) => f.branch === branch && f.needQty > 0 && !hiddenOrderItems[keyOf(f)]
   );
+
+  // Phiếu TỔNG HỢP toàn bộ NCC cho chi nhánh đang chọn - gộp tất cả nhóm NCC lại thành 1
+  // danh sách, kèm giá vốn + thành tiền để tính chi phí trước khi mua, không cần mở từng NCC.
+  const summaryItems = useMemo(() => {
+    return needItems
+      .map((it) => {
+        const s = supplierMap[keyOf(it)] || { supplier: "Chưa xác định NCC" };
+        const qty = effectiveQty(it);
+        return {
+          ...it,
+          supplier: s.supplier,
+          qty,
+          thanhTien: (Number(qty) || 0) * (it.giaVon || 0) * (it.packSize || 1),
+        };
+      })
+      .sort((a, b) => a.supplier.localeCompare(b.supplier, "vi") || a.ma.localeCompare(b.ma));
+  }, [needItems, supplierMap, orderOverrides]);
 
   const bySupplier = useMemo(() => {
     const map = {};
@@ -1834,10 +1863,27 @@ function PoTab({
     );
   }
 
+  if (viewingSummary) {
+    return <PoSummaryPreview branch={branch} items={summaryItems} onBack={() => setViewingSummary(false)} />;
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <BranchPicker branch={branch} setBranch={setBranch} includeAll={false} />
+        <button
+          onClick={() => setViewingSummary(true)}
+          disabled={summaryItems.length === 0}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm ml-2"
+          style={{
+            background: summaryItems.length ? C.court : C.floorLight,
+            color: summaryItems.length ? C.cream : "#b5ac96",
+            fontWeight: 700,
+          }}
+          title="Xem/tải phiếu gộp tất cả NCC của chi nhánh này - tính tổng chi phí trước khi mua"
+        >
+          <FileText size={16} /> Phiếu tổng hợp tất cả NCC ({summaryItems.length} mã)
+        </button>
         {savedMsg && <span style={{ color: C.ok, fontSize: 13, fontWeight: 600 }}>{savedMsg}</span>}
       </div>
 
@@ -2004,6 +2050,164 @@ function PoTab({
 
 // Xem trước PO dạng phiếu chuyên nghiệp, có nút In/Xuất PDF (dùng window.print + CSS
 // @media print để chỉ in đúng vùng phiếu) và nút lưu vào lịch sử.
+// Phiếu TỔNG HỢP toàn bộ NCC cho 1 chi nhánh - gộp tất cả nhóm NCC thành 1 tài liệu, có
+// tính sẵn Thành tiền theo Giá vốn để xem tổng chi phí dự kiến TRƯỚC KHI mua hàng. Tải được
+// ra Excel (tính toán/lưu trữ) hoặc in PDF (gửi cho từng NCC nếu cần).
+function PoSummaryPreview({ branch, items, onBack }) {
+  const grandTotal = items.reduce((sum, it) => sum + it.thanhTien, 0);
+
+  const bySupplierGroups = useMemo(() => {
+    const map = {};
+    items.forEach((it) => {
+      if (!map[it.supplier]) map[it.supplier] = [];
+      map[it.supplier].push(it);
+    });
+    return Object.entries(map).map(([supplier, list]) => ({
+      supplier,
+      list,
+      subtotal: list.reduce((s, it) => s + it.thanhTien, 0),
+    }));
+  }, [items]);
+
+  const exportExcel = () => {
+    const rows = items.map((it, i) => ({
+      STT: i + 1,
+      NCC: it.supplier,
+      "Mã hàng": it.ma,
+      "Tên hàng": it.ten,
+      SL: it.qty,
+      "Đơn vị": it.packUnit,
+      "SL/gói": it.packSize,
+      "Giá vốn (đơn vị cơ bản)": it.giaVon,
+      "Thành tiền": it.thanhTien,
+    }));
+    rows.push({
+      STT: "",
+      NCC: "",
+      "Mã hàng": "",
+      "Tên hàng": "TỔNG CỘNG",
+      SL: "",
+      "Đơn vị": "",
+      "SL/gói": "",
+      "Giá vốn (đơn vị cơ bản)": "",
+      "Thành tiền": grandTotal,
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "TongHopNCC");
+
+    const now = new Date();
+    const stamp =
+      String(now.getDate()).padStart(2, "0") +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      now.getFullYear() +
+      "-" +
+      String(now.getHours()).padStart(2, "0") +
+      String(now.getMinutes()).padStart(2, "0");
+
+    XLSX.writeFile(wb, `PhieuTongHop_${branch}_${stamp}.xlsx`);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 po-no-print">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm"
+          style={{ background: C.floorLight, fontWeight: 600 }}
+        >
+          <X size={16} /> Đóng
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
+          style={{ background: C.court, color: C.cream, fontWeight: 700 }}
+        >
+          <FileText size={16} /> In / Xuất PDF
+        </button>
+        <button
+          onClick={exportExcel}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
+          style={{ background: C.amber, color: C.courtDeep, fontWeight: 700 }}
+        >
+          <Download size={16} /> Tải Excel
+        </button>
+      </div>
+
+      <div
+        className="po-print-area rounded-xl mx-auto"
+        style={{ background: "#fff", border: `1px solid ${C.line}`, maxWidth: 900, width: "100%", padding: 40 }}
+      >
+        <div className="flex items-start justify-between" style={{ borderBottom: `3px solid ${C.court}`, paddingBottom: 16, marginBottom: 24 }}>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 18, color: C.court }}>
+            Hệ thống sân thể thao Arena
+          </div>
+          <div className="text-right">
+            <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 18 }}>
+              PHIẾU TỔNG HỢP MUA HÀNG
+            </div>
+            <div style={{ fontSize: 12, color: "#8a8272", marginTop: 2 }}>
+              {new Date().toLocaleDateString("vi-VN")}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-6" style={{ fontSize: 13 }}>
+          <div><b>Chi nhánh:</b> {branch}</div>
+          <div><b>Số nhà cung cấp:</b> {bySupplierGroups.length}</div>
+          <div><b>Tổng số mã hàng:</b> {items.length}</div>
+          <div><b>Tổng chi phí dự kiến:</b> {fmtVND(grandTotal)}</div>
+        </div>
+
+        {bySupplierGroups.map((g) => (
+          <div key={g.supplier} style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: C.court }}>{g.supplier}</div>
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: C.floorLight }}>
+                  <th style={{ border: `1px solid ${C.line}`, padding: "6px 8px", fontSize: 12 }}>Mã hàng</th>
+                  <th style={{ border: `1px solid ${C.line}`, padding: "6px 8px", fontSize: 12, textAlign: "left" }}>Tên hàng</th>
+                  <th style={{ border: `1px solid ${C.line}`, padding: "6px 8px", fontSize: 12 }}>SL</th>
+                  <th style={{ border: `1px solid ${C.line}`, padding: "6px 8px", fontSize: 12 }}>ĐVT</th>
+                  <th style={{ border: `1px solid ${C.line}`, padding: "6px 8px", fontSize: 12 }}>Thành tiền</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.list.map((it) => (
+                  <tr key={it.ma}>
+                    <td style={{ border: `1px solid ${C.line}`, padding: "5px 8px", textAlign: "center", fontFamily: "monospace" }}>{it.ma}</td>
+                    <td style={{ border: `1px solid ${C.line}`, padding: "5px 8px" }}>{it.ten}</td>
+                    <td style={{ border: `1px solid ${C.line}`, padding: "5px 8px", textAlign: "center", fontWeight: 700 }}>{it.qty}</td>
+                    <td style={{ border: `1px solid ${C.line}`, padding: "5px 8px", textAlign: "center" }}>{it.packUnit}</td>
+                    <td style={{ border: `1px solid ${C.line}`, padding: "5px 8px", textAlign: "right" }}>{fmtVND(it.thanhTien)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td colSpan={4} style={{ border: `1px solid ${C.line}`, padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>
+                    Tổng {g.supplier}
+                  </td>
+                  <td style={{ border: `1px solid ${C.line}`, padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>
+                    {fmtVND(g.subtotal)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ))}
+
+        <div
+          className="flex items-center justify-between"
+          style={{ marginTop: 8, paddingTop: 12, borderTop: `2px solid ${C.court}`, fontSize: 15, fontWeight: 700 }}
+        >
+          <span>TỔNG CỘNG TOÀN BỘ</span>
+          <span>{fmtVND(grandTotal)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PoPreview({ po, onBack, onSave }) {
   const total = po.items.length;
   return (
