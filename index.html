@@ -532,7 +532,12 @@ function App() {
       try {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
-        const sheetName = wb.SheetNames.find((n) => n.trim() === "Working File") || wb.SheetNames[0];
+        // Ưu tiên tìm sheet "Assortment" (file mẫu do chính dashboard xuất ra) hoặc
+        // "Working File" (file gốc tải từ hệ thống); không thấy thì lấy sheet đầu tiên.
+        const sheetName =
+          wb.SheetNames.find((n) => n.trim() === "Assortment") ||
+          wb.SheetNames.find((n) => n.trim() === "Working File") ||
+          wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
         const rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
@@ -548,7 +553,6 @@ function App() {
         const headers = rows2d[headerRowIdx].map((h) => String(h == null ? "" : h).trim());
         const maIdx = headers.indexOf("Mã hàng");
         const tenIdx = headers.indexOf("Tên hàng");
-        const packSizeIdx = headers.indexOf("Quy cách đóng gói");
         const leadtimeIdx = headers.indexOf("Leadtime giao hàng (ngày)");
 
         const dataRows = rows2d.slice(headerRowIdx + 1).filter((r) => String(r[maIdx] || "").trim());
@@ -556,52 +560,72 @@ function App() {
           throw new Error("Không có mã hàng nào trong sheet này.");
         }
 
-        // File Working File chỉ có 1 cột "Quy cách đóng gói" (1 số duy nhất), CHƯA tách 2 tầng
-        // đơn vị -> khi import lần đầu, map tạm: Đơn vị bán hàng = "cái", Quy đổi bán hàng = 1,
-        // Đơn vị đặt hàng lấy theo PACK_UNIT_MAP cũ (hoặc "thùng"), Quy đổi đặt hàng = đúng số
-        // trong file (giữ nguyên kết quả tính toán y hệt như trước). Sau khi import, vào bảng
-        // Assortment sửa tay lại đúng 2 tầng đơn vị cho mã nào cần (VD cầu lông: hộp/12, thùng/600).
-        const existingByMa = {};
-        (data.assortment || []).forEach((row) => {
-          existingByMa[(row["Mã hàng"] || "").trim()] = row;
-        });
+        // ĐỊNH DẠNG MỚI (file mẫu tự xuất từ dashboard - "Xuất file mẫu"): đã có sẵn đủ 4 cột
+        // 2 tầng đơn vị -> đọc TRỰC TIẾP, không cần suy luận/mặc định gì cả.
+        const donViBanIdx = headers.indexOf("Đơn vị bán hàng");
+        const quyDoiBanIdx = headers.indexOf("Quy đổi bán hàng");
+        const donViDatIdx = headers.indexOf("Đơn vị đặt hàng");
+        const quyDoiDatIdx = headers.indexOf("Quy đổi đặt hàng");
+        const isTemplateFormat = donViBanIdx >= 0 && quyDoiBanIdx >= 0 && donViDatIdx >= 0 && quyDoiDatIdx >= 0;
 
-        const list = dataRows.map((r) => {
-          const ma = String(r[maIdx]).trim();
-          const packSizeRaw = packSizeIdx >= 0 ? Number(r[packSizeIdx]) : NaN;
-          const leadtimeRaw = leadtimeIdx >= 0 ? Number(r[leadtimeIdx]) : NaN;
-          const existing = existingByMa[ma];
+        let list;
 
-          // Nếu mã này ĐÃ có sẵn trong Assortment (đã từng sửa tay 2 tầng đơn vị trước đó) ->
-          // GIỮ NGUYÊN đơn vị/quy đổi đã sửa, chỉ cập nhật Tên hàng + Leadtime từ file mới.
-          // Tránh việc import lại đè mất công sửa tay trước đó.
-          if (existing && existing["Đơn vị đặt hàng"]) {
+        if (isTemplateFormat) {
+          list = dataRows.map((r) => ({
+            ma: String(r[maIdx]).trim(),
+            ten: tenIdx >= 0 ? String(r[tenIdx] || "").trim() : "",
+            donViBan: String(r[donViBanIdx] || "").trim(),
+            quyDoiBan: r[quyDoiBanIdx] === "" ? "" : Number(r[quyDoiBanIdx]),
+            donViDat: String(r[donViDatIdx] || "").trim(),
+            quyDoiDat: r[quyDoiDatIdx] === "" ? "" : Number(r[quyDoiDatIdx]),
+            leadtime: leadtimeIdx >= 0 && r[leadtimeIdx] !== "" ? Number(r[leadtimeIdx]) : "",
+          }));
+        } else {
+          // ĐỊNH DẠNG CŨ (Working File gốc từ hệ thống): chỉ có 1 cột "Quy cách đóng gói" ->
+          // suy luận tạm (cái/1, giữ nguyên số cũ làm Quy đổi đặt hàng). Mã nào ĐÃ có sẵn trong
+          // Assortment (đã sửa tay 2 tầng đơn vị trước đó) thì GIỮ NGUYÊN, không bị ghi đè.
+          const packSizeIdx = headers.indexOf("Quy cách đóng gói");
+          const existingByMa = {};
+          (data.assortment || []).forEach((row) => {
+            existingByMa[(row["Mã hàng"] || "").trim()] = row;
+          });
+
+          list = dataRows.map((r) => {
+            const ma = String(r[maIdx]).trim();
+            const packSizeRaw = packSizeIdx >= 0 ? Number(r[packSizeIdx]) : NaN;
+            const leadtimeRaw = leadtimeIdx >= 0 ? Number(r[leadtimeIdx]) : NaN;
+            const existing = existingByMa[ma];
+
+            if (existing && existing["Đơn vị đặt hàng"]) {
+              return {
+                ma,
+                ten: tenIdx >= 0 ? String(r[tenIdx] || "").trim() : existing["Tên hàng"] || "",
+                donViBan: existing["Đơn vị bán hàng"] || "cái",
+                quyDoiBan: existing["Quy đổi bán hàng"] || 1,
+                donViDat: existing["Đơn vị đặt hàng"],
+                quyDoiDat: existing["Quy đổi đặt hàng"],
+                leadtime: Number.isFinite(leadtimeRaw) ? leadtimeRaw : existing["Leadtime giao hàng (ngày)"] ?? "",
+              };
+            }
+
             return {
               ma,
-              ten: tenIdx >= 0 ? String(r[tenIdx] || "").trim() : existing["Tên hàng"] || "",
-              donViBan: existing["Đơn vị bán hàng"] || "cái",
-              quyDoiBan: existing["Quy đổi bán hàng"] || 1,
-              donViDat: existing["Đơn vị đặt hàng"],
-              quyDoiDat: existing["Quy đổi đặt hàng"],
-              leadtime: Number.isFinite(leadtimeRaw) ? leadtimeRaw : existing["Leadtime giao hàng (ngày)"] ?? "",
+              ten: tenIdx >= 0 ? String(r[tenIdx] || "").trim() : "",
+              donViBan: "cái",
+              quyDoiBan: 1,
+              donViDat: PACK_UNIT_MAP[ma] || "thùng",
+              quyDoiDat: Number.isFinite(packSizeRaw) && packSizeRaw > 0 ? packSizeRaw : 1,
+              leadtime: Number.isFinite(leadtimeRaw) ? leadtimeRaw : "",
             };
-          }
-
-          return {
-            ma,
-            ten: tenIdx >= 0 ? String(r[tenIdx] || "").trim() : "",
-            donViBan: "cái",
-            quyDoiBan: 1,
-            donViDat: PACK_UNIT_MAP[ma] || "thùng",
-            quyDoiDat: Number.isFinite(packSizeRaw) && packSizeRaw > 0 ? packSizeRaw : 1,
-            leadtime: Number.isFinite(leadtimeRaw) ? leadtimeRaw : "",
-          };
-        });
+          });
+        }
 
         const json = await pushAssortment(list);
         setAssortmentStatus("done");
         setAssortmentMessage(
-          `Đã cập nhật ${json.rowsWritten ?? list.length} mã hàng vào Assortment (đọc từ sheet "${sheetName}"). Mã đã sửa tay 2 tầng đơn vị trước đó được giữ nguyên.`
+          isTemplateFormat
+            ? `Đã cập nhật ${json.rowsWritten ?? list.length} mã hàng từ file mẫu (đọc đúng 2 tầng đơn vị bạn đã điền).`
+            : `Đã cập nhật ${json.rowsWritten ?? list.length} mã hàng vào Assortment (đọc từ sheet "${sheetName}"). Mã đã sửa tay 2 tầng đơn vị trước đó được giữ nguyên.`
         );
         await syncData();
         setTimeout(() => setAssortmentStatus("idle"), 6000);
@@ -2529,6 +2553,51 @@ function AssortmentTab({ assortment, salesMap, status, message, onImportFile, on
     setDeletingMa(null);
   };
 
+  // Xuất file mẫu (.xlsx) đúng tên cột để điền tay rồi import ngược lại. Nếu ĐÃ có sẵn dữ
+  // liệu Assortment, điền sẵn luôn dữ liệu hiện tại vào file (dễ sửa hàng loạt trên Excel
+  // hơn là sửa từng dòng trên web) - nếu chưa có gì, xuất 1 dòng ví dụ (cầu lông) để tham khảo.
+  const exportTemplate = () => {
+    const cols = [
+      "Mã hàng",
+      "Tên hàng",
+      "Đơn vị bán hàng",
+      "Quy đổi bán hàng",
+      "Đơn vị đặt hàng",
+      "Quy đổi đặt hàng",
+      "Leadtime giao hàng (ngày)",
+    ];
+
+    let templateRows;
+    if (assortment.length > 0) {
+      templateRows = assortment.map((row) => ({
+        "Mã hàng": row["Mã hàng"] || "",
+        "Tên hàng": row["Tên hàng"] || "",
+        "Đơn vị bán hàng": row["Đơn vị bán hàng"] || "",
+        "Quy đổi bán hàng": row["Quy đổi bán hàng"] || "",
+        "Đơn vị đặt hàng": row["Đơn vị đặt hàng"] || "",
+        "Quy đổi đặt hàng": row["Quy đổi đặt hàng"] || "",
+        "Leadtime giao hàng (ngày)": row["Leadtime giao hàng (ngày)"] || "",
+      }));
+    } else {
+      templateRows = [
+        {
+          "Mã hàng": "SP000123",
+          "Tên hàng": "VD: Cầu lông Yonex (ví dụ, xóa dòng này đi)",
+          "Đơn vị bán hàng": "hộp",
+          "Quy đổi bán hàng": 12,
+          "Đơn vị đặt hàng": "thùng",
+          "Quy đổi đặt hàng": 600,
+          "Leadtime giao hàng (ngày)": 3,
+        },
+      ];
+    }
+
+    const ws = XLSX.utils.json_to_sheet(templateRows, { header: cols });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Assortment");
+    XLSX.writeFile(wb, "Assortment_Template.xlsx");
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
@@ -2563,6 +2632,18 @@ function AssortmentTab({ assortment, salesMap, status, message, onImportFile, on
           >
             <Download size={16} className={status === "loading" ? "animate-spin" : ""} />
             {status === "loading" ? "Đang cập nhật..." : "Cập nhật Assortment (chọn file Excel)"}
+          </button>
+          <button
+            onClick={exportTemplate}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm"
+            style={{ background: C.floorLight, color: C.ink, fontWeight: 700, border: `1px solid ${C.line}` }}
+            title={
+              assortment.length > 0
+                ? "Tải file có sẵn toàn bộ danh sách hiện tại - sửa hàng loạt trên Excel rồi import lại"
+                : "Tải file mẫu (có 1 dòng ví dụ) để điền đúng tên cột"
+            }
+          >
+            <FileText size={16} /> Xuất file mẫu
           </button>
           <span style={{ fontSize: 12, color: "#8a8272" }}>
             Chọn file "Working File" đã tải từ hệ thống — tự đọc đúng sheet. Mã đã sửa tay đơn vị/quy đổi
