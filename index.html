@@ -2773,29 +2773,65 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
 
     try {
       const target = unanalyzed.slice(0, MAX_AI_ROWS);
+
+      // Tính xu hướng tồn kho (so giá trị đầu/cuối trong 10 ngày có dữ liệu) - cho AI 1 tín
+      // hiệu CÔ ĐỌNG thay vì phải tự suy ra từ 10 con số rời rạc.
+      const trendOf = (r) => {
+        const vals = pivot.dates.map((d) => r.byDate[d]).filter((v) => v !== undefined);
+        if (vals.length < 2) return "chưa đủ dữ liệu";
+        const first = vals[0];
+        const last = vals[vals.length - 1];
+        if (last > first) return `tăng ${first}→${last}`;
+        if (last < first) return `giảm ${first}→${last}`;
+        return `đứng yên ${last}`;
+      };
+
       const items = target.map((r) => {
         const sw = salesWindowMap[r.branch + "|" + r.ma] || { qty10: 0, qty20: 0, qty30: 0 };
         return {
           ma: r.ma,
           ten: r.ten,
           chiNhanh: r.branch,
-          tonHomNay: r.byDate[lastDate] ?? null,
-          ban10Ngay: sw.qty10,
-          ban20Ngay: sw.qty20,
-          ban30Ngay: sw.qty30,
+          tonHomNay: r.byDate[lastDate] ?? "—",
+          xuHuongTon: trendOf(r),
+          ban10: sw.qty10,
+          ban20: sw.qty20,
+          ban30: sw.qty30,
         };
       });
 
-      const prompt =
-        "Bạn là trợ lý phân tích bán hàng cho chuỗi sân thể thao F&B tại Việt Nam. Dưới đây là " +
-        "danh sách sản phẩm kèm tồn kho hiện tại và số lượng bán ra trong 10/20/30 ngày gần nhất. " +
-        'Với MỖI sản phẩm, viết 1 nhận xét NGẮN GỌN bằng tiếng Việt (tối đa 12 từ) về việc sản phẩm ' +
-        "đó đang bán CHẠY, bán CHẬM, hay KHÔNG BÁN ĐƯỢC, kèm gợi ý ngắn (VD 'cần nhập thêm', " +
-        "'cân nhắc ngừng bán', 'theo dõi thêm').\n\n" +
-        "Dữ liệu (JSON):\n" +
-        JSON.stringify(items) +
-        '\n\nTrả lời DUY NHẤT bằng JSON array, không thêm chữ nào khác, không bọc trong markdown, ' +
-        'đúng định dạng: [{"ma":"...","chiNhanh":"...","nhanXet":"..."}]';
+      // Gửi dữ liệu dạng BẢNG MARKDOWN thay vì JSON thô - nhẹ hơn (ít token hơn), và mô hình
+      // ngôn ngữ đọc bảng Markdown tự nhiên/chính xác hơn 1 khối JSON dài.
+      const mdHeader = "| Mã hàng | Tên hàng | Chi nhánh | Tồn hôm nay | Xu hướng tồn (10 ngày) | Bán 10 ngày | Bán 20 ngày | Bán 30 ngày |";
+      const mdSep = "|---|---|---|---|---|---|---|---|";
+      const mdRows = items.map(
+        (it) =>
+          `| ${it.ma} | ${it.ten} | ${it.chiNhanh} | ${it.tonHomNay} | ${it.xuHuongTon} | ${it.ban10} | ${it.ban20} | ${it.ban30} |`
+      );
+      const dataTable = [mdHeader, mdSep, ...mdRows].join("\n");
+
+      const prompt = `# Vai trò
+Bạn là chuyên gia phân tích tồn kho & bán lẻ F&B, nhiều năm kinh nghiệm quản lý chuỗi sân thể thao (bán nước uống, đồ ăn nhẹ, phụ kiện thể thao tại quầy). Bạn đọc số liệu tồn kho + tốc độ bán để đưa ra khuyến nghị SÁT THỰC TẾ, có căn cứ số liệu, KHÔNG nói chung chung.
+
+# Chú thích dữ liệu
+- "Tồn hôm nay": tồn kho hiện tại (đơn vị bán hàng thực tế theo KiotViet, có thể là chai/hộp/cái tùy mã).
+- "Xu hướng tồn (10 ngày)": tồn kho đầu và cuối 10 ngày gần nhất.
+- "Bán 10/20/30 ngày": TỔNG số lượng bán ra trong đúng khoảng đó (không phải trung bình/ngày).
+
+# Dữ liệu cần phân tích
+${dataTable}
+
+# Yêu cầu phân tích (áp dụng cho từng dòng)
+1. Ước lượng tốc độ bán đang TĂNG hay CHẬM LẠI: so Bán 10 ngày × 3 với Bán 30 ngày - nếu lớn hơn rõ rệt là đang tăng tốc, nhỏ hơn rõ rệt là đang chậm lại, xấp xỉ là ổn định.
+2. Đối chiếu tốc độ bán với xu hướng tồn kho:
+   - Tồn giảm nhanh + bán đang tăng tốc → SẮP HẾT HÀNG, cần nhập gấp.
+   - Tồn không đổi/tăng mà Bán 10/20/30 ngày đều = 0 hoặc gần 0 → HÀNG CHẾT (dead stock), cân nhắc ngừng nhập hoặc thanh lý.
+   - Tồn giảm chậm, bán đều đặn → BÌNH THƯỜNG, theo dõi thêm.
+3. Viết nhận xét CỤ THỂ bằng tiếng Việt, tối đa 20 từ, PHẢI có số liệu dẫn chứng (không viết chung chung kiểu "bán chậm" suông) và nêu rõ nên làm gì.
+
+# Định dạng trả lời
+CHỈ trả về JSON array, không thêm chữ nào khác, không bọc trong \`\`\`markdown hay \`\`\`json:
+[{"ma":"...","chiNhanh":"...","nhanXet":"..."}]`;
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         geminiModel || "gemini-2.5-flash"
@@ -2958,7 +2994,7 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
       )}
 
       <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-        <table className="w-full text-sm" style={{ minWidth: 1400 }}>
+        <table className="w-full text-sm" style={{ minWidth: 1600 }}>
           <thead>
             <tr style={{ background: C.floorLight, color: "#5c5644" }}>
               <Th>Chi nhánh</Th>
