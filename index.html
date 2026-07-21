@@ -331,7 +331,7 @@ function App() {
   // trình duyệt của bạn (localStorage), KHÔNG nằm trong code, giống hệt cách xử lý token
   // KiotViet - an toàn để host file này công khai.
   const [geminiApiKey, setGeminiApiKey] = useState("");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.0-flash");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
 
   useEffect(() => {
     (async () => {
@@ -345,7 +345,7 @@ function App() {
       setBufferDays(BUFFER_DAYS_OPTIONS.includes(buf) ? buf : DEFAULT_BUFFER_DAYS);
       try {
         setGeminiApiKey(localStorage.getItem("gemini-api-key") || "");
-        setGeminiModel(localStorage.getItem("gemini-model") || "gemini-2.0-flash");
+        setGeminiModel(localStorage.getItem("gemini-model") || "gemini-2.5-flash");
       } catch (e) {}
     })();
   }, []);
@@ -2652,7 +2652,7 @@ function GeminiKeySetup({ geminiApiKey, geminiModel, onSaveGeminiApiKey, onSaveG
 
   const save = () => {
     onSaveGeminiApiKey(tempKey.trim());
-    onSaveGeminiModel(tempModel.trim() || "gemini-2.0-flash");
+    onSaveGeminiModel(tempModel.trim() || "gemini-2.5-flash");
     setOpen(false);
   };
 
@@ -2688,10 +2688,19 @@ function GeminiKeySetup({ geminiApiKey, geminiModel, onSaveGeminiApiKey, onSaveG
               type="text"
               value={tempModel}
               onChange={(e) => setTempModel(e.target.value)}
-              placeholder="gemini-2.0-flash"
+              placeholder="gemini-2.5-flash"
               style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13, width: 220 }}
             />
-            <span style={{ fontSize: 11, color: "#8a8272" }}>(để mặc định nếu không chắc)</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#8a8272" }}>
+            Danh sách model được miễn phí của Google hay đổi theo thời gian (model cũ có thể bị
+            ngừng hỗ trợ). Nếu báo lỗi "quota exceeded"/"limit: 0", model đó có thể đã hết hạn -
+            thử đổi sang <code>gemini-2.5-flash</code>, <code>gemini-3.5-flash</code>, hoặc{" "}
+            <code>gemini-3.1-flash-lite</code>. Xem danh sách mới nhất tại{" "}
+            <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer" style={{ color: C.court, textDecoration: "underline" }}>
+              ai.google.dev/gemini-api/docs/pricing
+            </a>{" "}
+            (tìm dòng có chữ "Free").
           </div>
           <button
             onClick={save}
@@ -2766,7 +2775,7 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
         'đúng định dạng: [{"ma":"...","chiNhanh":"...","nhanXet":"..."}]';
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        geminiModel || "gemini-2.0-flash"
+        geminiModel || "gemini-2.5-flash"
       )}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
 
       const res = await fetch(url, {
@@ -2778,7 +2787,12 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
       const json = await res.json();
 
       if (json.error) {
-        throw new Error(json.error.message || "Lỗi gọi Gemini API");
+        const rawMsg = json.error.message || "Lỗi gọi Gemini API";
+        const isQuotaOrModelIssue = /quota|limit|not found|not supported/i.test(rawMsg);
+        const hint = isQuotaOrModelIssue
+          ? ' (model "' + (geminiModel || "gemini-2.5-flash") + '" có thể đã hết hạn/ngừng hỗ trợ - thử đổi model ở khung "Cấu hình Gemini API" phía trên, VD gemini-2.5-flash / gemini-3.5-flash / gemini-3.1-flash-lite)'
+          : "";
+        throw new Error(rawMsg + hint);
       }
 
       const textOut = (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) || "";
