@@ -70,6 +70,8 @@ const ClipboardList = (p) => <Icon {...p}><rect x="8" y="2" width="8" height="4"
 const Bell = (p) => <Icon {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></Icon>;
 const Archive = (p) => <Icon {...p}><rect x="2" y="4" width="20" height="5" rx="1" /><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" /><line x1="10" y1="13" x2="14" y2="13" /></Icon>;
 const Tag = (p) => <Icon {...p}><path d="M20.59 13.41 13 21l-9-9V4h8l8.59 8.59a2 2 0 0 1 0 2.82Z" /><circle cx="7.5" cy="7.5" r="1.5" /></Icon>;
+const Calendar = (p) => <Icon {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></Icon>;
+const Sparkles = (p) => <Icon {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" /></Icon>;
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`;
 
@@ -306,7 +308,7 @@ function App() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [data, setData] = useState({ invoices: [], tonkho: [], nhaphang: [], assortment: [] });
+  const [data, setData] = useState({ invoices: [], tonkho: [], nhaphang: [], assortment: [], tonkhoHistory: [] });
   const [lastSync, setLastSync] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [poHistory, setPoHistory] = useState([]);
@@ -325,6 +327,11 @@ function App() {
   // Số ngày dự phòng dùng để tính Tồn kho tối thiểu (7/14/21/28 ngày) - chọn được trên
   // dashboard (xem ForecastTab), lưu lại lựa chọn trên trình duyệt.
   const [bufferDays, setBufferDays] = useState(DEFAULT_BUFFER_DAYS);
+  // API key Google Gemini (miễn phí, tự lấy tại aistudio.google.com/apikey) - CHỈ lưu trên
+  // trình duyệt của bạn (localStorage), KHÔNG nằm trong code, giống hệt cách xử lý token
+  // KiotViet - an toàn để host file này công khai.
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.0-flash");
 
   useEffect(() => {
     (async () => {
@@ -336,7 +343,25 @@ function App() {
       setHiddenOrderItems(hidden);
       const buf = await loadJSON("buffer-days", DEFAULT_BUFFER_DAYS);
       setBufferDays(BUFFER_DAYS_OPTIONS.includes(buf) ? buf : DEFAULT_BUFFER_DAYS);
+      try {
+        setGeminiApiKey(localStorage.getItem("gemini-api-key") || "");
+        setGeminiModel(localStorage.getItem("gemini-model") || "gemini-2.0-flash");
+      } catch (e) {}
     })();
+  }, []);
+
+  const saveGeminiApiKey = useCallback((key) => {
+    setGeminiApiKey(key);
+    try {
+      localStorage.setItem("gemini-api-key", key);
+    } catch (e) {}
+  }, []);
+
+  const saveGeminiModel = useCallback((model) => {
+    setGeminiModel(model);
+    try {
+      localStorage.setItem("gemini-model", model);
+    } catch (e) {}
   }, []);
 
   const changeBufferDays = useCallback((days) => {
@@ -720,7 +745,15 @@ function App() {
       } catch (e) {
         assortment = [];
       }
-      setData({ invoices, tonkho, nhaphang, assortment });
+      // "TonKho_History" là sheet TÙY CHỌN (script đồng bộ tồn kho tự tạo dần theo ngày) ->
+      // fetch riêng, lỗi/chưa có thì coi như rỗng, KHÔNG làm hỏng cả lần sync.
+      let tonkhoHistory = [];
+      try {
+        tonkhoHistory = await fetchSheet("TonKho_History");
+      } catch (e) {
+        tonkhoHistory = [];
+      }
+      setData({ invoices, tonkho, nhaphang, assortment, tonkhoHistory });
       setLastSync(new Date());
     } catch (e) {
       setError(e.message || String(e));
@@ -882,6 +915,65 @@ function App() {
       });
   }, [data, assortmentSet, assortmentInfoMap, bufferDays]);
 
+  // Doanh số 10/20/30 ngày gần nhất theo TỪNG (chi nhánh, mã hàng) - tách riêng khỏi salesMap
+  // trong forecast (vốn chỉ tính 30/60 ngày để dự báo đặt hàng) - dùng cho tab "Tồn Kho Theo
+  // Ngày" để đối chiếu tồn kho giảm/tăng với thực tế bán ra.
+  const salesWindowMap = useMemo(() => {
+    const now = new Date();
+    const cutoff10 = new Date(now.getTime() - 10 * 24 * 3600 * 1000);
+    const cutoff20 = new Date(now.getTime() - 20 * 24 * 3600 * 1000);
+    const cutoff30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+
+    const map = {};
+    data.invoices.forEach((row) => {
+      const branch = row["Chi nhánh"];
+      const ma = row["Mã hàng"];
+      if (!branch || !ma) return;
+      const d = parseDate(row["Giờ đến"]);
+      const key = branch + "|" + ma;
+      if (!map[key]) map[key] = { qty10: 0, qty20: 0, qty30: 0 };
+      const qty = Number(row["Số lượng"] || 0);
+      if (d && d >= cutoff10) map[key].qty10 += qty;
+      if (d && d >= cutoff20) map[key].qty20 += qty;
+      if (d && d >= cutoff30) map[key].qty30 += qty;
+    });
+    return map;
+  }, [data.invoices]);
+
+  // Bảng PIVOT tồn kho theo ngày - dọc theo (Chi nhánh, Mã hàng), ngang theo 10 ngày gần nhất.
+  // Đọc từ sheet "TonKho_History" (script Python tự ghi thêm mỗi ngày, xem ton_kho_export.py).
+  const stockHistoryPivot = useMemo(() => {
+    // 10 ngày gần nhất (kể cả hôm nay), mới nhất bên phải.
+    const dates = [];
+    const now = new Date();
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10)); // "YYYY-MM-DD"
+    }
+
+    const rowMap = {};
+    data.tonkhoHistory.forEach((row) => {
+      const ngay = (row["Ngày"] || "").trim();
+      const branch = (row["Chi nhánh"] || "").trim();
+      const ma = (row["Mã hàng"] || "").trim();
+      if (!ngay || !branch || !ma) return;
+
+      const key = branch + "|" + ma;
+      if (!rowMap[key]) {
+        rowMap[key] = { branch, ma, ten: row["Tên hàng"] || "", byDate: {} };
+      }
+      if (row["Tên hàng"]) rowMap[key].ten = row["Tên hàng"];
+      rowMap[key].byDate[ngay] = Number(row["Tồn kho hiện tại"] || 0);
+    });
+
+    const rows = Object.values(rowMap).sort(
+      (a, b) => a.branch.localeCompare(b.branch) || a.ma.localeCompare(b.ma)
+    );
+
+    return { dates, rows };
+  }, [data.tonkhoHistory]);
+
   // Gộp doanh số 30 ngày qua (TỔNG CẢ 3 CHI NHÁNH) theo từng Mã hàng - dùng để hiển thị
   // nhanh trong tab Assortment, khỏi phải mở tab Đặt hàng mới xem được đang bán chạy/chậm.
   const assortmentSalesMap = useMemo(() => {
@@ -1006,6 +1098,16 @@ function App() {
             onImportFile={importAssortmentFile}
             onDelete={deleteAssortmentItem}
             onUpdateItem={updateAssortmentItem}
+          />
+        )}
+        {tab === "stockhistory" && (
+          <StockHistoryTab
+            pivot={stockHistoryPivot}
+            salesWindowMap={salesWindowMap}
+            geminiApiKey={geminiApiKey}
+            geminiModel={geminiModel}
+            onSaveGeminiApiKey={saveGeminiApiKey}
+            onSaveGeminiModel={saveGeminiModel}
           />
         )}
       </div>
@@ -1174,6 +1276,7 @@ function TabBar({ tab, setTab }) {
     { id: "po", label: "Tạo PO", icon: ShoppingCart },
     { id: "history", label: "Lịch sử PO", icon: Archive },
     { id: "assortment", label: "Assortment", icon: Tag },
+    { id: "stockhistory", label: "Tồn Theo Ngày", icon: Calendar },
   ];
   return (
     <div className="flex gap-1 px-4 md:px-8 pt-3 overflow-x-auto" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -2522,6 +2625,281 @@ function EditableCell({ value, type = "text", onCommit, width = 64, align = "cen
         fontSize: 13,
       }}
     />
+  );
+}
+
+// ============================================================
+// TỒN THEO NGÀY - pivot tồn kho (dọc: Chi nhánh+Mã hàng, ngang: 10 ngày gần nhất) + doanh số
+// 10/20/30 ngày + AI phân tích (Google Gemini, miễn phí) nhận xét bán chạy/chậm từng dòng.
+// ============================================================
+
+function fmtDateShort(isoDate) {
+  // "2026-07-21" -> "21/07"
+  const parts = (isoDate || "").split("-");
+  if (parts.length !== 3) return isoDate || "";
+  return `${parts[2]}/${parts[1]}`;
+}
+
+function GeminiKeySetup({ geminiApiKey, geminiModel, onSaveGeminiApiKey, onSaveGeminiModel }) {
+  const [open, setOpen] = useState(!geminiApiKey);
+  const [tempKey, setTempKey] = useState(geminiApiKey);
+  const [tempModel, setTempModel] = useState(geminiModel);
+
+  useEffect(() => {
+    setTempKey(geminiApiKey);
+    setTempModel(geminiModel);
+  }, [geminiApiKey, geminiModel]);
+
+  const save = () => {
+    onSaveGeminiApiKey(tempKey.trim());
+    onSaveGeminiModel(tempModel.trim() || "gemini-2.0-flash");
+    setOpen(false);
+  };
+
+  return (
+    <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="flex items-center justify-between">
+        <div style={{ fontWeight: 700 }}>
+          🤖 Cấu hình Gemini API {geminiApiKey ? <span style={{ color: C.ok, fontSize: 12 }}>(đã có key)</span> : <span style={{ color: C.danger, fontSize: 12 }}>(chưa có key)</span>}
+        </div>
+        <button onClick={() => setOpen((o) => !o)} style={{ fontSize: 13, color: C.court, textDecoration: "underline" }}>
+          {open ? "Thu gọn" : "Sửa"}
+        </button>
+      </div>
+      {open && (
+        <div className="flex flex-col gap-2 mt-3">
+          <div style={{ fontSize: 13, color: "#8a8272" }}>
+            Lấy API key MIỄN PHÍ tại{" "}
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: C.court, textDecoration: "underline" }}>
+              aistudio.google.com/apikey
+            </a>{" "}
+            (đăng nhập bằng tài khoản Google bất kỳ). Key chỉ lưu trên trình duyệt của bạn, không nằm trong code, không ai khác xem được.
+          </div>
+          <input
+            type="password"
+            value={tempKey}
+            onChange={(e) => setTempKey(e.target.value)}
+            placeholder="Dán Gemini API key vào đây..."
+            style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13 }}
+          />
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 12, color: "#8a8272" }}>Model:</span>
+            <input
+              type="text"
+              value={tempModel}
+              onChange={(e) => setTempModel(e.target.value)}
+              placeholder="gemini-2.0-flash"
+              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13, width: 220 }}
+            />
+            <span style={{ fontSize: 11, color: "#8a8272" }}>(để mặc định nếu không chắc)</span>
+          </div>
+          <button
+            onClick={save}
+            className="self-start px-4 py-2 rounded-lg text-sm"
+            style={{ background: C.amber, color: C.courtDeep, fontWeight: 700 }}
+          >
+            Lưu
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onSaveGeminiApiKey, onSaveGeminiModel }) {
+  const [branch, setBranch] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [aiNotes, setAiNotes] = useState({});
+  const [aiStatus, setAiStatus] = useState("idle"); // idle | loading | done | error
+  const [aiMessage, setAiMessage] = useState("");
+
+  const rows = pivot.rows
+    .filter((r) => branch === "ALL" || r.branch === branch)
+    .filter((r) => {
+      if (!search.trim()) return true;
+      const q = normalizeVN(search);
+      return normalizeVN(r.ma).includes(q) || normalizeVN(r.ten).includes(q);
+    });
+
+  const MAX_AI_ROWS = 60;
+  const lastDate = pivot.dates[pivot.dates.length - 1];
+
+  const runAiAnalysis = async () => {
+    if (!geminiApiKey) {
+      setAiStatus("error");
+      setAiMessage('Chưa có Gemini API key - điền ở khung "Cấu hình Gemini API" phía trên trước.');
+      return;
+    }
+    if (rows.length === 0) {
+      setAiStatus("error");
+      setAiMessage("Không có mã hàng nào để phân tích (kiểm tra lại bộ lọc).");
+      return;
+    }
+
+    setAiStatus("loading");
+    setAiMessage("");
+
+    try {
+      const target = rows.slice(0, MAX_AI_ROWS);
+      const items = target.map((r) => {
+        const sw = salesWindowMap[r.branch + "|" + r.ma] || { qty10: 0, qty20: 0, qty30: 0 };
+        return {
+          ma: r.ma,
+          ten: r.ten,
+          chiNhanh: r.branch,
+          tonHomNay: r.byDate[lastDate] ?? null,
+          ban10Ngay: sw.qty10,
+          ban20Ngay: sw.qty20,
+          ban30Ngay: sw.qty30,
+        };
+      });
+
+      const prompt =
+        "Bạn là trợ lý phân tích bán hàng cho chuỗi sân thể thao F&B tại Việt Nam. Dưới đây là " +
+        "danh sách sản phẩm kèm tồn kho hiện tại và số lượng bán ra trong 10/20/30 ngày gần nhất. " +
+        'Với MỖI sản phẩm, viết 1 nhận xét NGẮN GỌN bằng tiếng Việt (tối đa 12 từ) về việc sản phẩm ' +
+        "đó đang bán CHẠY, bán CHẬM, hay KHÔNG BÁN ĐƯỢC, kèm gợi ý ngắn (VD 'cần nhập thêm', " +
+        "'cân nhắc ngừng bán', 'theo dõi thêm').\n\n" +
+        "Dữ liệu (JSON):\n" +
+        JSON.stringify(items) +
+        '\n\nTrả lời DUY NHẤT bằng JSON array, không thêm chữ nào khác, không bọc trong markdown, ' +
+        'đúng định dạng: [{"ma":"...","chiNhanh":"...","nhanXet":"..."}]';
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        geminiModel || "gemini-2.0-flash"
+      )}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      });
+
+      const json = await res.json();
+
+      if (json.error) {
+        throw new Error(json.error.message || "Lỗi gọi Gemini API");
+      }
+
+      const textOut = (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) || "";
+      const cleaned = textOut.replace(/```json/gi, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      const newNotes = {};
+      parsed.forEach((item) => {
+        const key = (item.chiNhanh || "") + "|" + (item.ma || "");
+        newNotes[key] = item.nhanXet || "";
+      });
+
+      setAiNotes((prev) => ({ ...prev, ...newNotes }));
+      setAiStatus("done");
+      setAiMessage(
+        `Đã phân tích ${parsed.length} mã hàng` +
+          (rows.length > MAX_AI_ROWS ? ` (giới hạn ${MAX_AI_ROWS} mã/lần, còn ${rows.length - MAX_AI_ROWS} mã chưa phân tích - lọc bớt bằng tìm kiếm/chi nhánh rồi chạy lại).` : ".")
+      );
+      setTimeout(() => setAiStatus("idle"), 8000);
+    } catch (e) {
+      console.error(e);
+      setAiStatus("error");
+      setAiMessage(e.message || String(e));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <GeminiKeySetup
+        geminiApiKey={geminiApiKey}
+        geminiModel={geminiModel}
+        onSaveGeminiApiKey={onSaveGeminiApiKey}
+        onSaveGeminiModel={onSaveGeminiModel}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <BranchPicker branch={branch} setBranch={setBranch} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo Mã hàng hoặc Tên hàng..."
+          className="text-sm ml-2"
+          style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.line}`, minWidth: 220 }}
+        />
+        <button
+          onClick={runAiAnalysis}
+          disabled={aiStatus === "loading"}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
+          style={{
+            background: aiStatus === "error" ? C.dangerBg : aiStatus === "done" ? C.okBg : C.amber,
+            color: aiStatus === "error" ? C.danger : aiStatus === "done" ? C.ok : C.courtDeep,
+            fontWeight: 700,
+          }}
+        >
+          <Sparkles size={16} className={aiStatus === "loading" ? "animate-spin" : ""} />
+          {aiStatus === "loading" ? "Đang phân tích..." : "AI Phân Tích"}
+        </button>
+        <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>
+          {rows.length} mã hàng
+        </div>
+      </div>
+
+      {aiMessage && (
+        <div style={{ fontSize: 13, color: aiStatus === "error" ? C.danger : C.ok }}>{aiMessage}</div>
+      )}
+
+      <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full text-sm" style={{ minWidth: 1400 }}>
+          <thead>
+            <tr style={{ background: C.floorLight, color: "#5c5644" }}>
+              <Th>Chi nhánh</Th>
+              <Th>Mã hàng</Th>
+              <Th align="left">Tên hàng</Th>
+              {pivot.dates.map((d) => (
+                <Th key={d}>{fmtDateShort(d)}</Th>
+              ))}
+              <Th formula="Tổng SL bán ra 10 ngày gần nhất (từ Invoices)">Bán 10 ngày</Th>
+              <Th formula="Tổng SL bán ra 20 ngày gần nhất">Bán 20 ngày</Th>
+              <Th formula="Tổng SL bán ra 30 ngày gần nhất">Bán 30 ngày</Th>
+              <Th align="left">AI Nhận Xét</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const sw = salesWindowMap[r.branch + "|" + r.ma] || { qty10: 0, qty20: 0, qty30: 0 };
+              const note = aiNotes[r.branch + "|" + r.ma];
+              return (
+                <tr key={r.branch + "|" + r.ma} style={{ background: i % 2 ? C.cream : "#fff" }}>
+                  <Td>{r.branch}</Td>
+                  <Td mono>{r.ma}</Td>
+                  <Td align="left">{r.ten}</Td>
+                  {pivot.dates.map((d) => (
+                    <Td key={d}>{r.byDate[d] !== undefined ? r.byDate[d] : "—"}</Td>
+                  ))}
+                  <Td>{sw.qty10}</Td>
+                  <Td>{sw.qty20}</Td>
+                  <Td>{sw.qty30}</Td>
+                  <Td align="left">
+                    {note ? (
+                      <span style={{ fontSize: 12.5 }}>{note}</span>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "#b5ac96" }}>—</span>
+                    )}
+                  </Td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7 + pivot.dates.length} className="text-center py-8" style={{ color: "#8a8272" }}>
+                  {pivot.rows.length === 0
+                    ? 'Chưa có dữ liệu lịch sử tồn kho - sheet "TonKho_History" sẽ tự tích lũy dần mỗi ngày sau khi script tự động chạy (xem hướng dẫn Tồn Kho tự động).'
+                    : "Không có mã hàng phù hợp"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
