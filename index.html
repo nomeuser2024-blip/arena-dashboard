@@ -943,18 +943,30 @@ function App() {
   // Bảng PIVOT tồn kho theo ngày - dọc theo (Chi nhánh, Mã hàng), ngang theo 10 ngày gần nhất.
   // Đọc từ sheet "TonKho_History" (script Python tự ghi thêm mỗi ngày, xem ton_kho_export.py).
   const stockHistoryPivot = useMemo(() => {
-    // 10 ngày gần nhất (kể cả hôm nay), mới nhất bên phải.
+    // 10 ngày gần nhất (kể cả hôm nay), mới nhất bên phải. Dùng LOCAL date (giờ trình duyệt),
+    // KHÔNG dùng toISOString() (quy đổi sang UTC -> có thể lệch sang ngày hôm trước nếu xem
+    // vào khoảng nửa đêm - 7h sáng giờ VN).
+    const fmtLocalDate = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
     const dates = [];
     const now = new Date();
     for (let i = 9; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().slice(0, 10)); // "YYYY-MM-DD"
+      dates.push(fmtLocalDate(d));
     }
 
     const rowMap = {};
     data.tonkhoHistory.forEach((row) => {
-      const ngay = (row["Ngày"] || "").trim();
+      // .slice(0, 10): Google Sheets tự nhận diện chuỗi "2026-07-20" là kiểu Ngày (Date) thay
+      // vì chữ thường -> khi lấy qua API trả về kèm cả giờ "2026-07-20 00:00:00" -> phải cắt
+      // đúng 10 ký tự đầu (YYYY-MM-DD) mới khớp được với danh sách 10 ngày đang so khớp bên dưới.
+      const ngay = String(row["Ngày"] || "").trim().slice(0, 10);
       const branch = (row["Chi nhánh"] || "").trim();
       const ma = (row["Mã hàng"] || "").trim();
       if (!ngay || !branch || !ma) return;
@@ -2745,11 +2757,22 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
       return;
     }
 
+    // Bỏ qua mã ĐÃ CÓ nhận xét AI rồi - mỗi lần bấm sẽ phân tích tiếp LÔ KẾ TIẾP (chưa có
+    // nhận xét), thay vì ghi đè lại đúng lô đầu tiên như trước.
+    const unanalyzed = rows.filter((r) => !aiNotes[r.branch + "|" + r.ma]);
+
+    if (unanalyzed.length === 0) {
+      setAiStatus("done");
+      setAiMessage("Tất cả mã hàng đang hiển thị (theo bộ lọc hiện tại) đã được AI phân tích rồi. Bấm \"Xóa nhận xét AI\" nếu muốn phân tích lại từ đầu.");
+      setTimeout(() => setAiStatus("idle"), 6000);
+      return;
+    }
+
     setAiStatus("loading");
     setAiMessage("");
 
     try {
-      const target = rows.slice(0, MAX_AI_ROWS);
+      const target = unanalyzed.slice(0, MAX_AI_ROWS);
       const items = target.map((r) => {
         const sw = salesWindowMap[r.branch + "|" + r.ma] || { qty10: 0, qty20: 0, qty30: 0 };
         return {
@@ -2809,7 +2832,7 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
       setAiStatus("done");
       setAiMessage(
         `Đã phân tích ${parsed.length} mã hàng` +
-          (rows.length > MAX_AI_ROWS ? ` (giới hạn ${MAX_AI_ROWS} mã/lần, còn ${rows.length - MAX_AI_ROWS} mã chưa phân tích - lọc bớt bằng tìm kiếm/chi nhánh rồi chạy lại).` : ".")
+          (unanalyzed.length > MAX_AI_ROWS ? ` (còn ${unanalyzed.length - MAX_AI_ROWS} mã chưa phân tích - bấm "AI Phân Tích" lần nữa để phân tích tiếp lô kế tiếp).` : ".")
       );
       setTimeout(() => setAiStatus("idle"), 8000);
     } catch (e) {
@@ -2817,6 +2840,56 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
       setAiStatus("error");
       setAiMessage(e.message || String(e));
     }
+  };
+
+  const aiAnalyzedCount = rows.filter((r) => aiNotes[r.branch + "|" + r.ma]).length;
+
+  const resetAiNotes = () => {
+    if (aiAnalyzedCount === 0) return;
+    if (!window.confirm(`Xóa nhận xét AI của ${aiAnalyzedCount} mã đang hiển thị (theo bộ lọc hiện tại)? Không ảnh hưởng mã của bộ lọc khác.`)) {
+      return;
+    }
+    setAiNotes((prev) => {
+      const next = { ...prev };
+      rows.forEach((r) => delete next[r.branch + "|" + r.ma]);
+      return next;
+    });
+  };
+
+  // Tải bảng đang hiển thị (đúng theo bộ lọc hiện tại, kèm cả nhận xét AI nếu có) ra file
+  // Excel - xử lý hoàn toàn trong trình duyệt bằng SheetJS.
+  const exportExcel = () => {
+    const exportRows = rows.map((r) => {
+      const sw = salesWindowMap[r.branch + "|" + r.ma] || { qty10: 0, qty20: 0, qty30: 0 };
+      const row = {
+        "Chi nhánh": r.branch,
+        "Mã hàng": r.ma,
+        "Tên hàng": r.ten,
+      };
+      pivot.dates.forEach((d) => {
+        row[fmtDateShort(d)] = r.byDate[d] !== undefined ? r.byDate[d] : "";
+      });
+      row["Bán 10 ngày"] = sw.qty10;
+      row["Bán 20 ngày"] = sw.qty20;
+      row["Bán 30 ngày"] = sw.qty30;
+      row["AI Nhận Xét"] = aiNotes[r.branch + "|" + r.ma] || "";
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "TonTheoNgay");
+
+    const now = new Date();
+    const stamp =
+      String(now.getDate()).padStart(2, "0") +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      now.getFullYear() +
+      "-" +
+      String(now.getHours()).padStart(2, "0") +
+      String(now.getMinutes()).padStart(2, "0");
+
+    XLSX.writeFile(wb, `TonTheoNgay_${stamp}.xlsx`);
   };
 
   return (
@@ -2851,8 +2924,32 @@ function StockHistoryTab({ pivot, salesWindowMap, geminiApiKey, geminiModel, onS
           <Sparkles size={16} className={aiStatus === "loading" ? "animate-spin" : ""} />
           {aiStatus === "loading" ? "Đang phân tích..." : "AI Phân Tích"}
         </button>
+        {aiAnalyzedCount > 0 && (
+          <button
+            onClick={resetAiNotes}
+            className="text-sm px-3 py-2 rounded-lg"
+            style={{ color: C.danger, border: `1px solid ${C.danger}`, fontWeight: 600 }}
+            title="Xóa nhận xét AI của các mã đang hiển thị, để phân tích lại từ đầu"
+          >
+            Xóa nhận xét AI ({aiAnalyzedCount})
+          </button>
+        )}
+        <button
+          onClick={exportExcel}
+          disabled={rows.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm"
+          style={{
+            background: rows.length ? C.floorLight : "#f3f1ea",
+            color: rows.length ? C.ink : "#b5ac96",
+            fontWeight: 700,
+            border: `1px solid ${C.line}`,
+          }}
+          title="Tải bảng đang hiển thị (đúng theo bộ lọc hiện tại, kèm nhận xét AI) ra file Excel"
+        >
+          <Download size={14} /> Tải Excel
+        </button>
         <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>
-          {rows.length} mã hàng
+          {aiAnalyzedCount}/{rows.length} mã hàng đã phân tích AI
         </div>
       </div>
 
