@@ -986,6 +986,106 @@ function App() {
     return { dates, rows };
   }, [data.tonkhoHistory]);
 
+
+  // Giá trị tồn kho theo 10 ngày gần nhất.
+  // Tỷ trọng tại sân = Giá trị tồn mới nhất của mã tại sân / Tổng giá trị tồn mới nhất
+  // của cùng mã ở cả 3 sân. Giá trị âm được chặn về 0 khi tính tỷ trọng để tránh phần trăm âm.
+  const stockValueTrend = useMemo(() => {
+    const fmtLocalDate = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    const dates = [];
+    const now = new Date();
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      dates.push(fmtLocalDate(d));
+    }
+
+    const rowMap = {};
+    data.tonkhoHistory.forEach((row) => {
+      const ngay = String(row["Ngày"] || "").trim().slice(0, 10);
+      const branch = String(row["Chi nhánh"] || "").trim();
+      const ma = String(row["Mã hàng"] || "").trim();
+      const ten = String(row["Tên hàng"] || "").trim();
+      if (!ngay || !branch || !ma) return;
+
+      const giaVon = Number(row["Giá vốn"] || 0);
+      const ton = Number(row["Tồn kho hiện tại"] || 0);
+      const value = giaVon * ton;
+      const key = branch + "|" + ma;
+
+      if (!rowMap[key]) {
+        rowMap[key] = {
+          branch,
+          ma,
+          ten,
+          byDate: {},
+          qtyByDate: {},
+          costByDate: {},
+        };
+      }
+
+      if (ten) rowMap[key].ten = ten;
+      rowMap[key].byDate[ngay] = value;
+      rowMap[key].qtyByDate[ngay] = ton;
+      rowMap[key].costByDate[ngay] = giaVon;
+    });
+
+    let rows = Object.values(rowMap).map((r) => {
+      const values = dates.map((d) => (r.byDate[d] !== undefined ? r.byDate[d] : null));
+      const available = dates.filter((d) => r.byDate[d] !== undefined);
+      const firstDate = available[0] || null;
+      const latestDate = available[available.length - 1] || null;
+
+      const firstValue = firstDate ? Number(r.byDate[firstDate] || 0) : 0;
+      const latestValue = latestDate ? Number(r.byDate[latestDate] || 0) : 0;
+      const latestCost = latestDate ? Number(r.costByDate[latestDate] || 0) : 0;
+      const latestQty = latestDate ? Number(r.qtyByDate[latestDate] || 0) : 0;
+      const diff = latestValue - firstValue;
+      const diffPct = firstValue !== 0 ? diff / Math.abs(firstValue) : null;
+
+      let direction = "FLAT";
+      if (diff > 0) direction = "UP";
+      if (diff < 0) direction = "DOWN";
+
+      return {
+        ...r,
+        values,
+        firstDate,
+        latestDate,
+        firstValue,
+        latestValue,
+        latestCost,
+        latestQty,
+        diff,
+        diffPct,
+        direction,
+        branchShare: 0,
+        totalSkuValue: 0,
+      };
+    });
+
+    const totalBySku = {};
+    rows.forEach((r) => {
+      totalBySku[r.ma] = (totalBySku[r.ma] || 0) + Math.max(0, r.latestValue);
+    });
+
+    rows = rows
+      .map((r) => {
+        const totalSkuValue = totalBySku[r.ma] || 0;
+        const branchShare = totalSkuValue > 0 ? Math.max(0, r.latestValue) / totalSkuValue : 0;
+        return { ...r, totalSkuValue, branchShare };
+      })
+      .sort((a, b) => b.latestValue - a.latestValue || a.ma.localeCompare(b.ma));
+
+    return { dates, rows };
+  }, [data.tonkhoHistory]);
+
   // Gộp doanh số 30 ngày qua (TỔNG CẢ 3 CHI NHÁNH) theo từng Mã hàng - dùng để hiển thị
   // nhanh trong tab Assortment, khỏi phải mở tab Đặt hàng mới xem được đang bán chạy/chậm.
   const assortmentSalesMap = useMemo(() => {
@@ -1121,6 +1221,9 @@ function App() {
             onSaveGeminiApiKey={saveGeminiApiKey}
             onSaveGeminiModel={saveGeminiModel}
           />
+        )}
+        {tab === "stockvalue" && (
+          <StockValueTrendTab trend={stockValueTrend} />
         )}
       </div>
     </div>
@@ -1289,6 +1392,7 @@ function TabBar({ tab, setTab }) {
     { id: "history", label: "Lịch sử PO", icon: Archive },
     { id: "assortment", label: "Assortment", icon: Tag },
     { id: "stockhistory", label: "Tồn Theo Ngày", icon: Calendar },
+    { id: "stockvalue", label: "Giá Trị Tồn", icon: TrendingDown },
   ];
   return (
     <div className="flex gap-1 px-4 md:px-8 pt-3 overflow-x-auto" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -3039,6 +3143,225 @@ CHỈ trả về JSON array, không thêm chữ nào khác, không bọc trong \
                 <td colSpan={7 + pivot.dates.length} className="text-center py-8" style={{ color: "#8a8272" }}>
                   {pivot.rows.length === 0
                     ? 'Chưa có dữ liệu lịch sử tồn kho - sheet "TonKho_History" sẽ tự tích lũy dần mỗi ngày sau khi script tự động chạy (xem hướng dẫn Tồn Kho tự động).'
+                    : "Không có mã hàng phù hợp"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
+function MiniSparkline({ values, direction, width = 130, height = 30 }) {
+  const clean = (values || []).map((v) => (v == null ? null : Number(v)));
+  const nums = clean.filter((v) => Number.isFinite(v));
+
+  if (nums.length < 2) {
+    return <span style={{ color: "#b5ac96" }}>—</span>;
+  }
+
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const range = max - min || 1;
+  const validPoints = [];
+
+  clean.forEach((v, i) => {
+    if (!Number.isFinite(v)) return;
+    const x = clean.length <= 1 ? 0 : (i / (clean.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    validPoints.push(`${x},${y}`);
+  });
+
+  const stroke = direction === "UP" ? C.danger : direction === "DOWN" ? C.ok : "#8a8272";
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-label="Xu hướng 10 ngày">
+      <polyline fill="none" stroke={stroke} strokeWidth="2" points={validPoints.join(" ")} />
+    </svg>
+  );
+}
+
+function StockValueTrendTab({ trend }) {
+  const [branch, setBranch] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("VALUE");
+
+  const rows = trend.rows
+    .filter((r) => branch === "ALL" || r.branch === branch)
+    .filter((r) => {
+      if (!search.trim()) return true;
+      const q = normalizeVN(search);
+      return normalizeVN(r.ma).includes(q) || normalizeVN(r.ten).includes(q);
+    })
+    .sort((a, b) => {
+      if (sortBy === "SHARE") return b.branchShare - a.branchShare || b.latestValue - a.latestValue;
+      if (sortBy === "CHANGE") return Math.abs(b.diff) - Math.abs(a.diff);
+      return b.latestValue - a.latestValue;
+    });
+
+  const totalValue = rows.reduce((sum, r) => sum + Math.max(0, r.latestValue), 0);
+  const upCount = rows.filter((r) => r.direction === "UP").length;
+  const downCount = rows.filter((r) => r.direction === "DOWN").length;
+
+  const exportExcel = () => {
+    const exportRows = rows.map((r) => {
+      const row = {
+        "Chi nhánh": r.branch,
+        "Mã hàng": r.ma,
+        "Tên hàng": r.ten,
+        "Giá vốn mới nhất": r.latestCost,
+        "Tồn mới nhất": r.latestQty,
+        "Giá trị tồn mới nhất": r.latestValue,
+        "Tổng giá trị mã tại 3 sân": r.totalSkuValue,
+        "Tỷ lệ chiếm tồn tại sân": r.branchShare,
+        "Giá trị đầu kỳ": r.firstValue,
+        "Chênh lệch 10 ngày": r.diff,
+        "% thay đổi": r.diffPct == null ? "" : r.diffPct,
+        "Xu hướng": r.direction,
+      };
+      trend.dates.forEach((d, i) => {
+        row[fmtDateShort(d)] = r.values[i] == null ? "" : r.values[i];
+      });
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "GiaTriTon");
+    XLSX.writeFile(wb, `GiaTriTon_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+          <div style={{ fontSize: 12, color: "#8a8272", fontWeight: 600 }}>Tổng giá trị tồn đang hiển thị</div>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, color: C.court }}>
+            {fmtVND(totalValue)}đ
+          </div>
+        </div>
+        <div className="rounded-xl p-4" style={{ background: C.dangerBg }}>
+          <div style={{ fontSize: 12, color: C.danger, fontWeight: 600 }}>Giá trị tồn tăng trong 10 ngày</div>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, color: C.danger }}>
+            {upCount} mã
+          </div>
+        </div>
+        <div className="rounded-xl p-4" style={{ background: C.okBg }}>
+          <div style={{ fontSize: 12, color: C.ok, fontWeight: 600 }}>Giá trị tồn giảm trong 10 ngày</div>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, color: C.ok }}>
+            {downCount} mã
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <div style={{ fontSize: 13, color: "#5c5644" }}>
+          <b>Tỷ lệ chiếm tồn tại sân</b> = Giá trị tồn mới nhất của mã tại sân đó ÷ Tổng giá trị tồn mới nhất
+          của cùng mã ở cả 3 sân. Tồn âm được tính là 0 khi chia tỷ lệ.
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <BranchPicker branch={branch} setBranch={setBranch} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo Mã hàng hoặc Tên hàng..."
+          className="text-sm ml-2"
+          style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.line}`, minWidth: 220 }}
+        />
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13 }}
+        >
+          <option value="VALUE">Sort: Giá trị tồn giảm dần</option>
+          <option value="SHARE">Sort: Tỷ lệ chiếm tồn giảm dần</option>
+          <option value="CHANGE">Sort: Biến động lớn nhất</option>
+        </select>
+        <button
+          onClick={exportExcel}
+          disabled={rows.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm"
+          style={{ background: C.floorLight, color: C.ink, fontWeight: 700, border: `1px solid ${C.line}` }}
+        >
+          <Download size={14} /> Tải Excel
+        </button>
+        <div className="ml-auto text-sm" style={{ color: "#8a8272" }}>{rows.length} dòng</div>
+      </div>
+
+      <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full text-sm" style={{ minWidth: 1750 }}>
+          <thead>
+            <tr style={{ background: C.floorLight, color: "#5c5644" }}>
+              <Th>Chi nhánh</Th>
+              <Th>Mã hàng</Th>
+              <Th align="left">Tên hàng</Th>
+              <Th>Giá vốn mới nhất</Th>
+              <Th>Tồn mới nhất</Th>
+              <Th formula="Giá vốn × Tồn kho hiện tại">Giá trị tồn mới nhất</Th>
+              <Th formula="Tổng giá trị tồn mới nhất của cùng mã tại cả 3 sân">Tổng giá trị mã (3 sân)</Th>
+              <Th formula="Giá trị mã tại sân ÷ Tổng giá trị cùng mã tại 3 sân">Tỷ lệ chiếm tồn tại sân</Th>
+              <Th>Giá trị đầu kỳ</Th>
+              <Th>Chênh lệch 10 ngày</Th>
+              <Th>% thay đổi</Th>
+              <Th>Xu hướng</Th>
+              <Th>Trend 10 ngày</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.branch + "|" + r.ma} style={{ background: i % 2 ? C.cream : "#fff" }}>
+                <Td>{r.branch}</Td>
+                <Td mono>{r.ma}</Td>
+                <Td align="left">{r.ten}</Td>
+                <Td>{fmtVND(r.latestCost)}</Td>
+                <Td>{fmtVND(r.latestQty)}</Td>
+                <Td><b>{fmtVND(r.latestValue)}đ</b></Td>
+                <Td>{fmtVND(r.totalSkuValue)}đ</Td>
+                <Td>
+                  <div style={{ minWidth: 90 }}>
+                    <div style={{ fontWeight: 700, color: C.court }}>
+                      {(r.branchShare * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%
+                    </div>
+                    <div style={{ height: 5, borderRadius: 999, background: C.floorLight, overflow: "hidden", marginTop: 3 }}>
+                      <div style={{ width: `${Math.min(100, Math.max(0, r.branchShare * 100))}%`, height: "100%", background: C.amber }} />
+                    </div>
+                  </div>
+                </Td>
+                <Td>{fmtVND(r.firstValue)}đ</Td>
+                <Td>
+                  <span style={{ color: r.diff > 0 ? C.danger : r.diff < 0 ? C.ok : "#8a8272", fontWeight: 700 }}>
+                    {r.diff > 0 ? "+" : ""}{fmtVND(r.diff)}đ
+                  </span>
+                </Td>
+                <Td>
+                  {r.diffPct == null ? "—" : `${r.diffPct > 0 ? "+" : ""}${(r.diffPct * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`}
+                </Td>
+                <Td>
+                  <span style={{
+                    background: r.direction === "UP" ? C.dangerBg : r.direction === "DOWN" ? C.okBg : C.floorLight,
+                    color: r.direction === "UP" ? C.danger : r.direction === "DOWN" ? C.ok : "#8a8272",
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}>
+                    {r.direction === "UP" ? "↑ Tăng" : r.direction === "DOWN" ? "↓ Giảm" : "→ Không đổi"}
+                  </span>
+                </Td>
+                <Td><MiniSparkline values={r.values} direction={r.direction} /></Td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={13} className="text-center py-8" style={{ color: "#8a8272" }}>
+                  {trend.rows.length === 0
+                    ? 'Chưa có dữ liệu trong sheet "TonKho_History".'
                     : "Không có mã hàng phù hợp"}
                 </td>
               </tr>
