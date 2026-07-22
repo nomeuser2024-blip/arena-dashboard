@@ -158,6 +158,124 @@ const BUFFER_DAYS_OPTIONS = [7, 14, 21, 28];
 const DEFAULT_BUFFER_DAYS = 7;
 const STALE_DAYS = 30;
 
+// Danh mục mã được tính Giá Trị Tồn. Yes = tính; No = vẫn hiển thị nhưng loại khỏi mọi tổng giá trị.
+// Khi sheet GiaTriTon_Config chưa tồn tại/rỗng, dashboard dùng danh sách mặc định này.
+const DEFAULT_INVENTORY_VALUE_SCOPE_TSV = `SP000006	Nước ngọt Mirinda Xá xị 320ml	lon	Yes
+SP000010	Nước ngọt Pepsi lon - 320ml	lon	Yes
+SP000011	Nước uống Pocari Sweat - CHAI 900ml	Thùng	No
+SP000012	Nước uống Pocari Sweat - CHAI 900ml	Chai	Yes
+SP000013	Nước ngọt vị sữa chua Good Mood - 450ml	Thùng	No
+SP000014	Nước ngọt vị sữa chua Good Mood - 450ml	Chai	Yes
+SP000015	Nước ngọt cam ép Twister -320ml	Thùng	No
+SP000016	Nước ngọt cam ép Twister -320ml	Chai	Yes
+SP000017	Nước ngọt Pocari Sweat - CHAI 500ml	Thùng	No
+SP000018	Nước ngọt Pocari Sweat - CHAI 500ml	Chai	Yes
+SP000019	Nước ngọt Revive chanh muối - 390ml	Thùng	No
+SP000020	Nước ngọt Revive chanh muối - 390ml	Chai	Yes
+SP000023	Nước ngọt Revive TRẮNG - 500ml	Thùng	No
+SP000024	Nước ngọt Revive TRẮNG - 500ml	Chai	Yes
+SP000025	Nước tăng lực Sting DÂU - chai 320ml	Thùng	No
+SP000026	Nước tăng lực Sting DÂU - chai 320ml	Chai	Yes
+SP000029	Nước tăng lực Redbull KẼM 250ml	Thùng	No
+SP000030	Nước tăng lực Redbull KẼM 250ml	lon	Yes
+SP000039	Nước tăng lực RockStar 320ml	Thùng	No
+SP000040	Nước tăng lực RockStar 320ml	Chai	Yes
+SP000041	Trà Oolong TEA+ VÀNG - 450ml	Thùng	No
+SP000042	Trà Oolong TEA+ VÀNG - 450ml	Chai	Yes
+SP000043	Trà Oolong TEA+ XANH 450ml	Thùng	No
+SP000044	Trà Oolong TEA+ XANH 450ml	Chai	Yes
+SP000045	Trà Olong TEA+ ĐEN - 450ml	Thùng	No
+SP000046	Trà Olong TEA+ ĐEN - 450ml	Chai	Yes
+SP000047	Nước suối Aquafina 1.5L	Thùng	No
+SP000048	Nước suối Aquafina 1.5L	Chai	Yes
+SP000049	Nuớc suối Aquafina 500ml	Thùng	No
+SP000050	Nuớc suối Aquafina 500ml	Chai	Yes
+SP000057	Cầu LÊ QUANG 43	Hộp	Yes
+SP000058	Cầu LÊ QUANG 43	Trái	Yes
+SP000065	Cầu Ba Sao PROX	Hộp	Yes
+SP000066	Cầu Ba Sao PROX	Trái	Yes
+SP000072	Quấn cán cao su non VS ( MIXED MÀU )	cái	Yes
+SP000073	Quấn cán BUMBEE AS-007 ( MIXED MÀU )	cái	Yes
+SP000079	Tất YONEX - TRẮNG - CỔ CAO	đôi	Yes
+SP000080	Tất YONEX 3D.ERGO ( L ) - Nhiều màu	cái	Yes
+SP000082	Băng trán YONEX ( SIZE NAM ) - ( Nhiều màu )	cái	Yes
+SP000084	Băng cổ tay YONEX - Nhiều màu	cái	Yes
+SP000085	Dây giày YONEX - Nhiều màu	bộ	Yes
+SP000086	Phấn chống mồ hôi tay TALCUM	Chai	Yes
+SP000088	Túi vợt Adidas VS3.1 6RB	cái	Yes
+SP000089	Túi xách thể thao Adidas Nữ - Xanh ngọc	cái	Yes
+SP000090	Balo Adidas 360B7 - Xám trắng	cái	Yes
+SP000091	Balo Adidas VS1.1 - Đen	cái	Yes
+SP000096	Vợt Toalson Raptor	cây	Yes
+SP000101	Vợt CL Adidas spieler E08.2 Pulse Blue Xanh/cam	cây	Yes
+SP000102	Vợt CL Adidas Spieler E08.02	cây	Yes
+SP000103	Vợt CL Adidas spieler E08.2 white trắng/xanh biển	cây	Yes
+SP000104	Vợt CL Adidas spieler E.08.2 Schock Sonic Aqua xanh dương	cây	Yes
+SP000110	Trà Olong TEA+ ĐÀO 450ml	Chai	Yes
+SP000111	Trà Olong TEA+ ĐÀO 450ml	Thùng	No
+SP000117	Quấn cán BUMBEE AS-007 ( MIXED MÀU )	Túi	Yes
+SP000119	Phấn chống mồ hôi tay APAVI	Chai	Yes
+SP000126	Nước ngọt vị dâu Good Mood-450ml	Chai	Yes
+SP000127	Nước ngọt vị dâu Good Mood-450ml	Thùng	No
+SP000128	Nước ngọt Pepsi 390ml	Chai	Yes
+SP000129	Nước ngọt Pepsi 390ml	Thùng	No
+SP000130	Nước ngọt 7Up-390ml	Chai	Yes
+SP000131	Nước ngọt 7Up-390ml	Thùng	No
+SP000137	Cầu VICTOR Master A - Box12	Trái	Yes
+SP000138	Cầu VICTOR Master A - Box12	Hộp	Yes
+SP000141	Cầu YONEX F80 - Box12	Trái	Yes
+SP000142	Cầu YONEX F80 - Box12	Hộp	Yes
+SP000146	Quan can Yonex ( Hop 60 )		Yes
+SP000148	Tất Nike/Adidas	đôi	Yes
+SP000156	Băng quấn cơ chân - KAIWIN	cái	Yes
+SP000157	Băng quấn cổ tay -KAIWIN	cái	Yes
+SP000158	Quấn cán BUMBEE AS-005 ( MIXED MÀU )	cái	Yes
+SP000165	Quấn cán vải AMUSI	cái	Yes
+SP000166	Quấn cán Toalson 3IN1	bộ	Yes
+SP000172	Tất Victor		Yes
+SP000174	Tất Yonex TRU 3D - Nhiều màu - Cổ cao	đôi	Yes
+SP000177	Nước uống TT Water Boost ( Hương Bưởi ) - Chai 555ml	Chai	Yes
+SP000178	Nước ngọt Revive Active PRO - Chai 450ml	Chai	Yes
+SP000179	Quấn cán Yonex REP	cái	Yes
+SP000180	Quấn cán cao su non VS-COMBO 6pcs	cái	Yes
+SP000182	Quấn cán vải cuộn 5m	cuộn	Yes
+SP000183	Quấn cán vải cuộn 10m	cuộn	Yes
+SP000184	Nước uống TT Water Boost (Hương Chanh) - Chai 555ml	Chai	Yes
+SP000189	Ba lô Adidas XS5 đen/vàng		Yes
+SP000211	Quấn cán cao su non VS-COMBO 6pcs	vỉ	Yes
+SP000215	Bình xịt khử mùi giày thể thao ion Bạc		Yes
+SP000216	Băng cổ tay AOLIKES		Yes
+SP000217	Băng bảo vệ khuỷ tay AOLIKES		Yes
+SP000218	Đai bảo vệ khớp gối A-7929		Yes
+SP000219	Đai bảo vệ khớp gối AOLIKES A-7919		Yes
+SP000266	Trà Oolong Tea+ Plus vị đào (320ml)	lon	Yes
+SP000267	Tất Yonex BCR		Yes
+SP000268	TEA+ Trà Ô Long Chanh Yuzu chai nhựa 450ml	Chai	Yes
+SP000269	TEA+ Trà Ô Long Chanh Yuzu chai nhựa 450ml	Thùng	No
+SP000270	Cầu Lê Quang - PRO Max (LÔNG NGỖNG)	Trái	Yes
+SP000272	Khăn lạnh		Yes
+SP000273	Khăn lạnh Combo 3+1		Yes
+SP000274	Nước suối Combo 3+1		Yes
+SP000275	Cầu Lê Quang - PRO Max (LÔNG NGỖNG)	Hộp	Yes
+SP000276	Bánh bao thịt heo 2 trứng	cái	Yes
+SP000277	Bánh bao thịt heo 1 trứng	cái	Yes
+SP000278	Bánh bao phô mai Gà nướng	cái	Yes
+SP000279	Bánh bao Phô mai Xúc Xích	cái	Yes
+SP000280	Trứng gà luộc	cái	Yes
+SP000281	Quấn cán cao su non VS-COMBO 6pcs	vỉ	Yes
+SP000282	Quấn cán cao su non VS-COMBO 6pcs	cái	Yes
+SP000283	Nước uống TT Water Boost (Hương Bạc Hà)	Chai	Yes
+SP000284	Tăng lực EASTROC	Chai	Yes
+SP000285	Combo 8 khăn + 4 suối		Yes
+SP000286	Revice chai 1L	Chai	Yes`;
+function getDefaultInventoryValueScope() {
+  return DEFAULT_INVENTORY_VALUE_SCOPE_TSV.trim().split("\n").map((line) => {
+    const [ma, ten, dvt, yn] = line.split("\t");
+    return { ma: (ma || "").trim(), ten: (ten || "").trim(), dvt: (dvt || "").trim(), yn: String(yn || "Yes").trim().toLowerCase() === "no" ? "No" : "Yes" };
+  }).filter((r) => r.ma);
+}
+
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -308,7 +426,7 @@ function App() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [data, setData] = useState({ invoices: [], tonkho: [], nhaphang: [], assortment: [], tonkhoHistory: [] });
+  const [data, setData] = useState({ invoices: [], tonkho: [], nhaphang: [], assortment: [], tonkhoHistory: [], inventoryValueConfig: [] });
   const [lastSync, setLastSync] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [poHistory, setPoHistory] = useState([]);
@@ -507,6 +625,8 @@ function App() {
   // ============================================================
   const [assortmentStatus, setAssortmentStatus] = useState("idle"); // idle|loading|done|error
   const [assortmentMessage, setAssortmentMessage] = useState("");
+  const [inventoryValueConfigStatus, setInventoryValueConfigStatus] = useState("idle");
+  const [inventoryValueConfigMessage, setInventoryValueConfigMessage] = useState("");
 
   // Mô hình MỚI: tách "quy cách đóng gói" thành 2 tầng đơn vị rõ ràng, tự tính ra hệ số
   // quy đổi thay vì gộp chung 1 số:
@@ -719,6 +839,49 @@ function App() {
     [data.assortment, pushAssortment]
   );
 
+
+  // Ghi toàn bộ danh mục Yes/No lên sheet GiaTriTon_Config.
+  const pushInventoryValueConfig = useCallback(
+    async (list) => {
+      setInventoryValueConfigStatus("loading");
+      setInventoryValueConfigMessage("");
+      try {
+        const clean = list
+          .map((r) => ({
+            ma: String(r.ma || "").trim(),
+            ten: String(r.ten || "").trim(),
+            dvt: String(r.dvt || "").trim(),
+            yn: String(r.yn || "Yes").trim().toLowerCase() === "no" ? "No" : "Yes",
+          }))
+          .filter((r) => r.ma);
+
+        const res = await fetch(config.url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            token: config.token,
+            action: "import_sheet",
+            sheet: "GiaTriTon_Config",
+            headers: ["Mã hàng", "Tên hàng", "ĐVT", "Y/N"],
+            rows: clean.map((r) => [r.ma, r.ten, r.dvt, r.yn]),
+          }),
+        });
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
+        setInventoryValueConfigStatus("done");
+        setInventoryValueConfigMessage(`Đã lưu ${json.rowsWritten ?? clean.length} mã vào GiaTriTon_Config.`);
+        await syncData();
+        setTimeout(() => setInventoryValueConfigStatus("idle"), 5000);
+      } catch (e) {
+        console.error(e);
+        setInventoryValueConfigStatus("error");
+        setInventoryValueConfigMessage(e.message || String(e));
+        throw e;
+      }
+    },
+    [config]
+  );
+
   const syncData = useCallback(async () => {
     if (!config || !config.url || !config.token) return;
     setLoading(true);
@@ -753,7 +916,13 @@ function App() {
       } catch (e) {
         tonkhoHistory = [];
       }
-      setData({ invoices, tonkho, nhaphang, assortment, tonkhoHistory });
+      let inventoryValueConfig = [];
+      try {
+        inventoryValueConfig = await fetchSheet("GiaTriTon_Config");
+      } catch (e) {
+        inventoryValueConfig = [];
+      }
+      setData({ invoices, tonkho, nhaphang, assortment, tonkhoHistory, inventoryValueConfig });
       setLastSync(new Date());
     } catch (e) {
       setError(e.message || String(e));
@@ -987,9 +1156,26 @@ function App() {
   }, [data.tonkhoHistory]);
 
 
+
+  const inventoryValueConfigList = useMemo(() => {
+    const fromSheet = (data.inventoryValueConfig || []).map((row) => ({
+      ma: String(row["Mã hàng"] || "").trim(),
+      ten: String(row["Tên hàng"] || "").trim(),
+      dvt: String(row["ĐVT"] || "").trim(),
+      yn: String(row["Y/N"] || "Yes").trim().toLowerCase() === "no" ? "No" : "Yes",
+    })).filter((r) => r.ma);
+    return fromSheet.length ? fromSheet : getDefaultInventoryValueScope();
+  }, [data.inventoryValueConfig]);
+
+  const inventoryValueConfigMap = useMemo(() => {
+    const map = {};
+    inventoryValueConfigList.forEach((r) => { map[r.ma] = r; });
+    return map;
+  }, [inventoryValueConfigList]);
+
   // Giá trị tồn kho theo 10 ngày gần nhất.
-  // Tỷ trọng tại sân = Giá trị tồn mới nhất của mã tại sân / Tổng giá trị tồn mới nhất
-  // của cùng mã ở cả 3 sân. Giá trị âm được chặn về 0 khi tính tỷ trọng để tránh phần trăm âm.
+  // Các cột hiện tại (Giá vốn, Tồn mới nhất, Giá trị tồn, tỷ trọng tại sân) CHỈ lấy đúng
+  // dữ liệu NGÀY HÔM NAY. Dữ liệu các ngày trước chỉ dùng để hiển thị lịch sử và trend.
   const stockValueTrend = useMemo(() => {
     const fmtLocalDate = (d) => {
       const y = d.getFullYear();
@@ -1005,6 +1191,7 @@ function App() {
       d.setDate(d.getDate() - i);
       dates.push(fmtLocalDate(d));
     }
+    const todayDate = dates[dates.length - 1];
 
     const rowMap = {};
     data.tonkhoHistory.forEach((row) => {
@@ -1016,7 +1203,10 @@ function App() {
 
       const giaVon = Number(row["Giá vốn"] || 0);
       const ton = Number(row["Tồn kho hiện tại"] || 0);
-      const value = giaVon * ton;
+      const rawValue = giaVon * ton;
+      const cfg = inventoryValueConfigMap[ma];
+      const included = cfg ? cfg.yn === "Yes" : false;
+      const value = included ? rawValue : 0;
       const key = branch + "|" + ma;
 
       if (!rowMap[key]) {
@@ -1027,25 +1217,31 @@ function App() {
           byDate: {},
           qtyByDate: {},
           costByDate: {},
+          rawValueByDate: {},
+          included,
+          configDvt: cfg ? cfg.dvt : "",
+          configYn: cfg ? cfg.yn : "Chưa khai báo",
         };
       }
 
       if (ten) rowMap[key].ten = ten;
       rowMap[key].byDate[ngay] = value;
+      rowMap[key].rawValueByDate[ngay] = rawValue;
       rowMap[key].qtyByDate[ngay] = ton;
       rowMap[key].costByDate[ngay] = giaVon;
     });
 
     let rows = Object.values(rowMap).map((r) => {
-      const values = dates.map((d) => (r.byDate[d] !== undefined ? r.byDate[d] : null));
-      const available = dates.filter((d) => r.byDate[d] !== undefined);
-      const firstDate = available[0] || null;
-      const latestDate = available[available.length - 1] || null;
-
+      const values = dates.map((d) => (r.byDate[d] !== undefined ? Number(r.byDate[d]) : null));
+      const availableBeforeOrToday = dates.filter((d) => r.byDate[d] !== undefined);
+      const firstDate = availableBeforeOrToday[0] || null;
       const firstValue = firstDate ? Number(r.byDate[firstDate] || 0) : 0;
-      const latestValue = latestDate ? Number(r.byDate[latestDate] || 0) : 0;
-      const latestCost = latestDate ? Number(r.costByDate[latestDate] || 0) : 0;
-      const latestQty = latestDate ? Number(r.qtyByDate[latestDate] || 0) : 0;
+
+      // CHỈ lấy đúng hôm nay cho các chỉ số hiện tại. Không tự lấy ngày gần nhất trước đó.
+      const hasToday = r.byDate[todayDate] !== undefined;
+      const latestValue = hasToday ? Number(r.byDate[todayDate] || 0) : 0;
+      const latestCost = hasToday ? Number(r.costByDate[todayDate] || 0) : 0;
+      const latestQty = hasToday ? Number(r.qtyByDate[todayDate] || 0) : 0;
       const diff = latestValue - firstValue;
       const diffPct = firstValue !== 0 ? diff / Math.abs(firstValue) : null;
 
@@ -1057,7 +1253,8 @@ function App() {
         ...r,
         values,
         firstDate,
-        latestDate,
+        latestDate: todayDate,
+        hasToday,
         firstValue,
         latestValue,
         latestCost,
@@ -1070,6 +1267,7 @@ function App() {
       };
     });
 
+    // Tổng của cùng mã tại cả 3 sân cũng CHỈ tính theo ngày hôm nay.
     const totalBySku = {};
     rows.forEach((r) => {
       totalBySku[r.ma] = (totalBySku[r.ma] || 0) + Math.max(0, r.latestValue);
@@ -1083,8 +1281,14 @@ function App() {
       })
       .sort((a, b) => b.latestValue - a.latestValue || a.ma.localeCompare(b.ma));
 
-    return { dates, rows };
-  }, [data.tonkhoHistory]);
+    // Tổng giá trị toàn bộ mã theo từng ngày để nhìn trend tổng ở đầu tab.
+    const dailyTotals = dates.map((date, i) => ({
+      date,
+      total: rows.reduce((sum, r) => sum + Math.max(0, Number(r.values[i] || 0)), 0),
+    }));
+
+    return { dates, todayDate, rows, dailyTotals };
+  }, [data.tonkhoHistory, inventoryValueConfigMap]);
 
   // Gộp doanh số 30 ngày qua (TỔNG CẢ 3 CHI NHÁNH) theo từng Mã hàng - dùng để hiển thị
   // nhanh trong tab Assortment, khỏi phải mở tab Đặt hàng mới xem được đang bán chạy/chậm.
@@ -1223,7 +1427,14 @@ function App() {
           />
         )}
         {tab === "stockvalue" && (
-          <StockValueTrendTab trend={stockValueTrend} />
+          <StockValueTrendTab
+            trend={stockValueTrend}
+            configList={inventoryValueConfigList}
+            configFromSheet={(data.inventoryValueConfig || []).length > 0}
+            configStatus={inventoryValueConfigStatus}
+            configMessage={inventoryValueConfigMessage}
+            onSaveConfig={pushInventoryValueConfig}
+          />
         )}
       </div>
     </div>
@@ -3184,7 +3395,129 @@ function MiniSparkline({ values, direction, width = 130, height = 30 }) {
   );
 }
 
-function StockValueTrendTab({ trend }) {
+
+function InventoryValueConfigPanel({ configList, configFromSheet, status, message, onSaveConfig }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(configList);
+  const [search, setSearch] = useState("");
+  const [newItem, setNewItem] = useState({ ma: "", ten: "", dvt: "", yn: "Yes" });
+
+  useEffect(() => setDraft(configList), [configList]);
+
+  const updateRow = (ma, patch) => {
+    setDraft((prev) => prev.map((r) => r.ma === ma ? { ...r, ...patch } : r));
+  };
+  const removeRow = (ma) => {
+    if (!window.confirm(`Xóa ${ma} khỏi bảng cấu hình Giá Trị Tồn?`)) return;
+    setDraft((prev) => prev.filter((r) => r.ma !== ma));
+  };
+  const addItem = () => {
+    const ma = newItem.ma.trim();
+    if (!ma) return window.alert("Vui lòng nhập Mã hàng.");
+    if (draft.some((r) => r.ma === ma)) return window.alert("Mã hàng đã tồn tại trong bảng.");
+    setDraft((prev) => [...prev, { ...newItem, ma, ten: newItem.ten.trim(), dvt: newItem.dvt.trim() }]);
+    setNewItem({ ma: "", ten: "", dvt: "", yn: "Yes" });
+  };
+  const filtered = draft.filter((r) => {
+    if (!search.trim()) return true;
+    const q = normalizeVN(search);
+    return normalizeVN(r.ma).includes(q) || normalizeVN(r.ten).includes(q);
+  });
+  const yesCount = draft.filter((r) => r.yn === "Yes").length;
+  const noCount = draft.filter((r) => r.yn === "No").length;
+
+  return (
+    <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div>
+          <div style={{ fontWeight: 700 }}>Danh mục tính Giá Trị Tồn</div>
+          <div style={{ fontSize: 12, color: "#8a8272" }}>
+            Yes: được tính vào giá trị và tổng. No: vẫn hiển thị tồn kho nhưng giá trị bị loại khỏi tổng.
+          </div>
+        </div>
+        <span style={{ marginLeft: 8, fontSize: 12, color: C.ok, fontWeight: 700 }}>Yes: {yesCount}</span>
+        <span style={{ fontSize: 12, color: C.danger, fontWeight: 700 }}>No: {noCount}</span>
+        {!configFromSheet && (
+          <span style={{ fontSize: 11, color: C.amberDeep }}>
+            Đang dùng danh sách mặc định trong code — bấm Lưu để tạo sheet GiaTriTon_Config.
+          </span>
+        )}
+        <button onClick={() => setOpen((v) => !v)} className="ml-auto px-3 py-1.5 rounded-lg text-sm"
+          style={{ background: C.floorLight, fontWeight: 700 }}>
+          {open ? "Thu gọn" : "Quản lý danh mục"}
+        </button>
+      </div>
+
+      {message && <div style={{ marginTop: 8, fontSize: 12, color: status === "error" ? C.danger : C.ok }}>{message}</div>}
+
+      {open && (
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <input value={newItem.ma} onChange={(e) => setNewItem({ ...newItem, ma: e.target.value })}
+              placeholder="Mã hàng mới" style={{ padding: "7px 9px", border: `1px solid ${C.line}`, borderRadius: 7 }} />
+            <input value={newItem.ten} onChange={(e) => setNewItem({ ...newItem, ten: e.target.value })}
+              placeholder="Tên hàng" className="md:col-span-2" style={{ padding: "7px 9px", border: `1px solid ${C.line}`, borderRadius: 7 }} />
+            <input value={newItem.dvt} onChange={(e) => setNewItem({ ...newItem, dvt: e.target.value })}
+              placeholder="ĐVT" style={{ padding: "7px 9px", border: `1px solid ${C.line}`, borderRadius: 7 }} />
+            <div className="flex gap-2">
+              <select value={newItem.yn} onChange={(e) => setNewItem({ ...newItem, yn: e.target.value })}
+                style={{ padding: "7px 9px", border: `1px solid ${C.line}`, borderRadius: 7 }}>
+                <option value="Yes">Yes — Tính</option>
+                <option value="No">No — Không tính</option>
+              </select>
+              <button onClick={addItem} style={{ background: C.amber, color: C.courtDeep, borderRadius: 7, padding: "7px 12px", fontWeight: 700 }}>
+                Thêm
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center">
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Tìm mã hoặc tên hàng..." style={{ padding: "7px 9px", border: `1px solid ${C.line}`, borderRadius: 7, minWidth: 230 }} />
+            <button onClick={() => onSaveConfig(draft)} disabled={status === "loading"}
+              style={{ background: C.court, color: C.cream, borderRadius: 7, padding: "8px 14px", fontWeight: 700 }}>
+              {status === "loading" ? "Đang lưu..." : `Lưu toàn bộ ${draft.length} mã`}
+            </button>
+          </div>
+
+          <div className="overflow-auto" style={{ maxHeight: 430, border: `1px solid ${C.line}`, borderRadius: 8 }}>
+            <table className="w-full text-sm" style={{ minWidth: 820 }}>
+              <thead>
+                <tr style={{ background: C.floorLight }}>
+                  <Th>Mã hàng</Th><Th align="left">Tên hàng</Th><Th>ĐVT</Th><Th>Y/N</Th><Th>Xóa</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={r.ma} style={{ background: i % 2 ? C.cream : "#fff" }}>
+                    <Td mono>{r.ma}</Td>
+                    <Td align="left">
+                      <input value={r.ten} onChange={(e) => updateRow(r.ma, { ten: e.target.value })}
+                        style={{ width: "100%", padding: "4px 6px", border: `1px solid ${C.line}`, borderRadius: 5 }} />
+                    </Td>
+                    <Td>
+                      <input value={r.dvt} onChange={(e) => updateRow(r.ma, { dvt: e.target.value })}
+                        style={{ width: 80, padding: "4px 6px", border: `1px solid ${C.line}`, borderRadius: 5, textAlign: "center" }} />
+                    </Td>
+                    <Td>
+                      <select value={r.yn} onChange={(e) => updateRow(r.ma, { yn: e.target.value })}
+                        style={{ padding: "4px 6px", borderRadius: 5, border: `1px solid ${r.yn === "Yes" ? C.ok : C.danger}` }}>
+                        <option value="Yes">Yes</option><option value="No">No</option>
+                      </select>
+                    </Td>
+                    <Td><button onClick={() => removeRow(r.ma)} style={{ color: C.danger }}><Trash2 size={15} /></button></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StockValueTrendTab({ trend, configList, configFromSheet, configStatus, configMessage, onSaveConfig }) {
   const [branch, setBranch] = useState("ALL");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("VALUE");
@@ -3202,6 +3535,12 @@ function StockValueTrendTab({ trend }) {
       return b.latestValue - a.latestValue;
     });
 
+  // Tổng theo từng ngày phải bám theo bộ lọc chi nhánh/search đang chọn.
+  const dailyTotals = trend.dates.map((date, i) => ({
+    date,
+    total: rows.reduce((sum, r) => sum + Math.max(0, Number(r.values[i] || 0)), 0),
+  }));
+
   const totalValue = rows.reduce((sum, r) => sum + Math.max(0, r.latestValue), 0);
   const upCount = rows.filter((r) => r.direction === "UP").length;
   const downCount = rows.filter((r) => r.direction === "DOWN").length;
@@ -3212,36 +3551,57 @@ function StockValueTrendTab({ trend }) {
         "Chi nhánh": r.branch,
         "Mã hàng": r.ma,
         "Tên hàng": r.ten,
-        "Giá vốn mới nhất": r.latestCost,
-        "Tồn mới nhất": r.latestQty,
-        "Giá trị tồn mới nhất": r.latestValue,
-        "Tổng giá trị mã tại 3 sân": r.totalSkuValue,
-        "Tỷ lệ chiếm tồn tại sân": r.branchShare,
+        "ĐVT cấu hình": r.configDvt || "",
+        "Y/N tính giá trị": r.configYn,
+        "Có dữ liệu hôm nay": r.hasToday ? "Có" : "Không",
+        "Giá vốn hôm nay": r.latestCost,
+        "Tồn hôm nay": r.latestQty,
+        "Giá trị tồn hôm nay": r.latestValue,
+        "Tổng giá trị mã tại 3 sân hôm nay": r.totalSkuValue,
+        "Tỷ lệ chiếm tồn tại sân hôm nay": r.branchShare,
         "Giá trị đầu kỳ": r.firstValue,
         "Chênh lệch 10 ngày": r.diff,
         "% thay đổi": r.diffPct == null ? "" : r.diffPct,
         "Xu hướng": r.direction,
       };
       trend.dates.forEach((d, i) => {
-        row[fmtDateShort(d)] = r.values[i] == null ? "" : r.values[i];
+        row[`Giá trị ${fmtDateShort(d)}`] = r.values[i] == null ? "" : r.values[i];
       });
       return row;
     });
 
+    const totalRow = {
+      "Chi nhánh": "",
+      "Mã hàng": "",
+      "Tên hàng": "TỔNG GIÁ TRỊ THEO NGÀY",
+    };
+    dailyTotals.forEach((d) => {
+      totalRow[`Giá trị ${fmtDateShort(d.date)}`] = d.total;
+    });
+    exportRows.push(totalRow);
+
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "GiaTriTon");
-    XLSX.writeFile(wb, `GiaTriTon_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `GiaTriTon_${trend.todayDate || new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   return (
     <div className="flex flex-col gap-3">
+      <InventoryValueConfigPanel
+        configList={configList}
+        configFromSheet={configFromSheet}
+        status={configStatus}
+        message={configMessage}
+        onSaveConfig={onSaveConfig}
+      />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-          <div style={{ fontSize: 12, color: "#8a8272", fontWeight: 600 }}>Tổng giá trị tồn đang hiển thị</div>
+          <div style={{ fontSize: 12, color: "#8a8272", fontWeight: 600 }}>Tổng giá trị tồn hôm nay đang hiển thị</div>
           <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, color: C.court }}>
             {fmtVND(totalValue)}đ
           </div>
+          <div style={{ fontSize: 11, color: "#8a8272" }}>{fmtDateShort(trend.todayDate)}</div>
         </div>
         <div className="rounded-xl p-4" style={{ background: C.dangerBg }}>
           <div style={{ fontSize: 12, color: C.danger, fontWeight: 600 }}>Giá trị tồn tăng trong 10 ngày</div>
@@ -3257,10 +3617,38 @@ function StockValueTrendTab({ trend }) {
         </div>
       </div>
 
+      <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 10 }}>
+          Trend tổng giá trị tồn theo ngày
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2">
+          {dailyTotals.map((d, i) => {
+            const prev = i > 0 ? dailyTotals[i - 1].total : null;
+            const change = prev == null ? null : d.total - prev;
+            const isToday = d.date === trend.todayDate;
+            return (
+              <div
+                key={d.date}
+                className="rounded-lg p-2"
+                style={{
+                  background: isToday ? C.floorLight : C.cream,
+                  border: `1px solid ${isToday ? C.amber : C.line}`,
+                }}
+              >
+                <div style={{ fontSize: 11, color: "#8a8272", fontWeight: 600 }}>{fmtDateShort(d.date)}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.court }}>{fmtVND(d.total)}đ</div>
+                <div style={{ fontSize: 10, color: change > 0 ? C.danger : change < 0 ? C.ok : "#8a8272" }}>
+                  {change == null ? "—" : `${change > 0 ? "+" : ""}${fmtVND(change)}đ`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
         <div style={{ fontSize: 13, color: "#5c5644" }}>
-          <b>Tỷ lệ chiếm tồn tại sân</b> = Giá trị tồn mới nhất của mã tại sân đó ÷ Tổng giá trị tồn mới nhất
-          của cùng mã ở cả 3 sân. Tồn âm được tính là 0 khi chia tỷ lệ.
+          <b>Tồn và giá vốn</b> vẫn hiển thị cho mọi mã. Chỉ mã <b>Yes</b> được tính Giá Trị Tồn, tỷ lệ và tổng; mã <b>No</b> vẫn hiện nhưng không cộng giá trị. Chỉ số hiện tại lấy đúng ngày hôm nay.
         </div>
       </div>
 
@@ -3279,9 +3667,9 @@ function StockValueTrendTab({ trend }) {
           onChange={(e) => setSortBy(e.target.value)}
           style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13 }}
         >
-          <option value="VALUE">Sort: Giá trị tồn giảm dần</option>
-          <option value="SHARE">Sort: Tỷ lệ chiếm tồn giảm dần</option>
-          <option value="CHANGE">Sort: Biến động lớn nhất</option>
+          <option value="VALUE">Sort: Giá trị tồn hôm nay giảm dần</option>
+          <option value="SHARE">Sort: Tỷ lệ chiếm tồn hôm nay giảm dần</option>
+          <option value="CHANGE">Sort: Biến động 10 ngày lớn nhất</option>
         </select>
         <button
           onClick={exportExcel}
@@ -3295,17 +3683,24 @@ function StockValueTrendTab({ trend }) {
       </div>
 
       <div className="rounded-xl overflow-auto" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-        <table className="w-full text-sm" style={{ minWidth: 1750 }}>
+        <table className="w-full text-sm" style={{ minWidth: 2650 }}>
           <thead>
             <tr style={{ background: C.floorLight, color: "#5c5644" }}>
               <Th>Chi nhánh</Th>
               <Th>Mã hàng</Th>
               <Th align="left">Tên hàng</Th>
-              <Th>Giá vốn mới nhất</Th>
-              <Th>Tồn mới nhất</Th>
-              <Th formula="Giá vốn × Tồn kho hiện tại">Giá trị tồn mới nhất</Th>
-              <Th formula="Tổng giá trị tồn mới nhất của cùng mã tại cả 3 sân">Tổng giá trị mã (3 sân)</Th>
-              <Th formula="Giá trị mã tại sân ÷ Tổng giá trị cùng mã tại 3 sân">Tỷ lệ chiếm tồn tại sân</Th>
+              <Th>ĐVT</Th>
+              <Th formula="Yes = tính giá trị; No/Chưa khai báo = chỉ hiển thị tồn">Tính giá trị?</Th>
+              {trend.dates.map((d, i) => (
+                <Th key={d} formula={`Tổng ngày: ${fmtVND(dailyTotals[i]?.total || 0)}đ`}>
+                  Giá trị {fmtDateShort(d)}
+                </Th>
+              ))}
+              <Th>Giá vốn hôm nay</Th>
+              <Th>Tồn hôm nay</Th>
+              <Th formula="Giá vốn hôm nay × Tồn kho hôm nay">Giá trị tồn hôm nay</Th>
+              <Th formula="Tổng giá trị hôm nay của cùng mã tại cả 3 sân">Tổng giá trị mã (3 sân)</Th>
+              <Th formula="Giá trị mã tại sân hôm nay ÷ Tổng giá trị cùng mã tại 3 sân hôm nay">Tỷ lệ chiếm tồn tại sân</Th>
               <Th>Giá trị đầu kỳ</Th>
               <Th>Chênh lệch 10 ngày</Th>
               <Th>% thay đổi</Th>
@@ -3319,9 +3714,28 @@ function StockValueTrendTab({ trend }) {
                 <Td>{r.branch}</Td>
                 <Td mono>{r.ma}</Td>
                 <Td align="left">{r.ten}</Td>
-                <Td>{fmtVND(r.latestCost)}</Td>
-                <Td>{fmtVND(r.latestQty)}</Td>
-                <Td><b>{fmtVND(r.latestValue)}đ</b></Td>
+                <Td>{r.configDvt || "—"}</Td>
+                <Td>
+                  <span style={{
+                    background: r.included ? C.okBg : C.dangerBg,
+                    color: r.included ? C.ok : C.danger,
+                    padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700
+                  }}>
+                    {r.included ? "Yes — Tính" : `${r.configYn} — Không tính`}
+                  </span>
+                </Td>
+                {trend.dates.map((d, idx) => (
+                  <Td key={d}>{!r.included ? <span style={{ color: "#b5ac96" }}>Không tính</span> : r.values[idx] == null ? "—" : `${fmtVND(r.values[idx])}đ`}</Td>
+                ))}
+                <Td>{r.hasToday ? fmtVND(r.latestCost) : "—"}</Td>
+                <Td>{r.hasToday ? fmtVND(r.latestQty) : "—"}</Td>
+                <Td>
+                  {!r.included
+                    ? <span style={{ color: "#8a8272", fontWeight: 700 }}>Không tính</span>
+                    : r.hasToday
+                      ? <b>{fmtVND(r.latestValue)}đ</b>
+                      : <span style={{ color: C.danger }}>Chưa có dữ liệu hôm nay</span>}
+                </Td>
                 <Td>{fmtVND(r.totalSkuValue)}đ</Td>
                 <Td>
                   <div style={{ minWidth: 90 }}>
@@ -3359,7 +3773,7 @@ function StockValueTrendTab({ trend }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={13} className="text-center py-8" style={{ color: "#8a8272" }}>
+                <td colSpan={13 + trend.dates.length} className="text-center py-8" style={{ color: "#8a8272" }}>
                   {trend.rows.length === 0
                     ? 'Chưa có dữ liệu trong sheet "TonKho_History".'
                     : "Không có mã hàng phù hợp"}
