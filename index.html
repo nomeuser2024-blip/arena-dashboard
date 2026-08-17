@@ -348,9 +348,25 @@ function fmtDate(d) {
   if (!d) return "—";
   return d.toLocaleDateString("vi-VN");
 }
-function daysAgo(d, now) {
+function startOfLocalDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+// "30 ngày gần nhất" = hôm nay + 29 ngày trước, tính theo NGÀY LỊCH địa phương.
+// Không dùng now - 30*24h vì cách đó sẽ cắt mất phần đầu của ngày xa nhất.
+function cutoffForLastNDays(days, now = new Date()) {
+  const d = startOfLocalDay(now);
+  d.setDate(d.getDate() - Math.max(0, Number(days || 1) - 1));
+  return d;
+}
+
+function daysAgo(d, now = new Date()) {
   if (!d) return null;
-  return Math.floor((now - d) / (24 * 3600 * 1000));
+  const a = startOfLocalDay(d);
+  const b = startOfLocalDay(now);
+  return Math.floor((b - a) / (24 * 3600 * 1000));
 }
 // Chuẩn hóa chuỗi để tìm kiếm: bỏ dấu tiếng Việt + viết thường, giúp gõ không dấu vẫn tìm ra
 // (VD: gõ "nuoc" vẫn khớp "Nước ngọt Revive")
@@ -1060,6 +1076,15 @@ function App() {
     return Array.from(map.values());
   }, [data.invoices]);
 
+  useEffect(() => {
+    if (!data.invoices.length) return;
+    const cutoff30 = cutoffForLastNDays(LOOKBACK_DAYS);
+    const distinct30 = distinctInvoices.filter((i) => i.date && i.date >= cutoff30);
+    const revenue30 = distinct30.reduce((sum, i) => sum + safeNumber(i.total), 0);
+    console.log("[Invoices] Distinct hóa đơn 30 ngày:", distinct30.length);
+    console.log("[Invoices] Doanh thu đúng 30 ngày (distinct invoice):", revenue30);
+  }, [data.invoices, distinctInvoices]);
+
   // Danh sách Mã hàng chính thức nằm trong Assortment (nếu chưa import lần nào thì rỗng ->
   // KHÔNG đánh dấu "ngoài assortment" cho bất kỳ mã nào cả, tránh cảnh báo sai khi tính năng
   // này chưa được thiết lập).
@@ -1107,8 +1132,8 @@ function App() {
   const forecast = useMemo(() => {
     if (!data.tonkho.length) return [];
     const now = new Date();
-    const cutoff30 = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 3600 * 1000);
-    const cutoff60 = new Date(now.getTime() - 60 * 24 * 3600 * 1000);
+    const cutoff30 = cutoffForLastNDays(LOOKBACK_DAYS, now);
+    const cutoff60 = cutoffForLastNDays(60, now);
 
     const salesMap = {};
     data.invoices.forEach((row) => {
@@ -1133,8 +1158,12 @@ function App() {
         const ma = t["Mã hàng"];
         const key = branch + "|" + ma;
         const sale = salesMap[key] || { qty30: 0, qty60: 0, lastDate: null };
-        const avgDay = sale.qty30 > 0 ? Math.ceil(sale.qty30 / LOOKBACK_DAYS) : 0;
-        const minStock = Math.ceil(avgDay * bufferDays);
+        // TB bán/ngày phải là trung bình thực, KHÔNG làm tròn lên trước.
+        // VD bán 1 SP/30 ngày => 0.033/ngày, không phải 1/ngày.
+        // Chỉ ROUNDUP ở bước tồn tối thiểu để ra số lượng tồn nguyên cần giữ.
+        const avgDayRaw = sale.qty30 > 0 ? sale.qty30 / LOOKBACK_DAYS : 0;
+        const avgDay = Math.round(avgDayRaw * 100) / 100;
+        const minStock = Math.ceil(avgDayRaw * bufferDays);
         // Tồn kho hiện tại đôi khi có giá trị âm/lẻ bất thường (lỗi dữ liệu nguồn, VD do quy đổi
         // đơn vị) -> chặn về tối thiểu 0, tránh needQty bị tính sai thành số lẻ khó hiểu.
         const rawCurrent = safeNumber(t["Tồn kho hiện tại"]);
@@ -1184,9 +1213,9 @@ function App() {
   // Ngày" để đối chiếu tồn kho giảm/tăng với thực tế bán ra.
   const salesWindowMap = useMemo(() => {
     const now = new Date();
-    const cutoff10 = new Date(now.getTime() - 10 * 24 * 3600 * 1000);
-    const cutoff20 = new Date(now.getTime() - 20 * 24 * 3600 * 1000);
-    const cutoff30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+    const cutoff10 = cutoffForLastNDays(10, now);
+    const cutoff20 = cutoffForLastNDays(20, now);
+    const cutoff30 = cutoffForLastNDays(30, now);
 
     const map = {};
     data.invoices.forEach((row) => {
@@ -1730,7 +1759,7 @@ function TabBar({ tab, setTab }) {
 // ============================================================
 function Dashboard({ distinctInvoices, forecast }) {
   const now = new Date();
-  const cutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 3600 * 1000);
+  const cutoff = cutoffForLastNDays(LOOKBACK_DAYS, now);
   const recent = distinctInvoices.filter((i) => i.date && i.date >= cutoff);
 
   const byBranch = BRANCHES.map((b) => {
@@ -1742,11 +1771,21 @@ function Dashboard({ distinctInvoices, forecast }) {
   const dailyMap = {};
   recent.forEach((i) => {
     const key = localDateKey(i.date);
+    if (!key) return;
     dailyMap[key] = (dailyMap[key] || 0) + i.total;
   });
-  const dailyData = Object.entries(dailyMap)
-    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([date, revenue]) => ({ date: date.slice(5), revenue }));
+
+  // Luôn dựng đủ 30 ngày lịch, kể cả ngày doanh thu = 0, để trend không bị nhảy/mất ngày.
+  const dailyData = [];
+  for (let offset = LOOKBACK_DAYS - 1; offset >= 0; offset--) {
+    const d = startOfLocalDay(now);
+    d.setDate(d.getDate() - offset);
+    const key = localDateKey(d);
+    dailyData.push({
+      date: key.slice(5),
+      revenue: dailyMap[key] || 0,
+    });
+  }
 
   const needOrderCount = forecast.filter((f) => f.needQty > 0).length;
   const staleCount = forecast.filter((f) => f.isStale).length;
@@ -1981,8 +2020,8 @@ function ForecastTab({
               <Th>Mã hàng</Th>
               <Th align="left">Tên hàng</Th>
               <Th align="left">NCC</Th>
-              <Th formula="Tổng SL bán 30 ngày ÷ 30">TB bán/ngày</Th>
-              <Th formula={`TB bán/ngày × ${bufferDays} (ngày dự phòng đang chọn)`}>Tồn kho tối thiểu</Th>
+              <Th formula="Tổng SL bán 30 ngày ÷ 30 (trung bình thực, không ROUNDUP trước)">TB bán/ngày</Th>
+              <Th formula={`ROUNDUP((Tổng SL bán 30 ngày ÷ 30) × ${bufferDays}, 0)`}>Tồn kho tối thiểu</Th>
               <Th>Tồn hiện tại</Th>
               <Th>SL/gói</Th>
               <Th>Leadtime (ngày)</Th>
