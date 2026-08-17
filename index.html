@@ -279,16 +279,66 @@ function getDefaultInventoryValueScope() {
 // ============================================================
 // HELPERS
 // ============================================================
-function parseDate(str) {
-  if (!str) return null;
-  if (str instanceof Date) return str;
-  const s = String(str);
-  const m = s.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
-  const m2 = s.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (m2) return new Date(+m2[1], +m2[2] - 1, +m2[3]);
-  const d = new Date(s);
-  return isNaN(d) ? null : d;
+function parseDate(value) {
+  if (value === null || value === undefined || value === "") return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  // Fallback nếu dữ liệu ngày bị trả về dạng Excel serial number.
+  // Google Apps Script thường đã format Date thành text, nhưng xử lý thêm để tránh lỗi.
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const d = new Date(excelEpoch.getTime() + value * 24 * 3600 * 1000);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const s = String(value).trim();
+  if (!s || s.toLowerCase() === "nan") return null;
+
+  // 1) yyyy-MM-dd HH:mm:ss / yyyy-MM-ddTHH:mm:ss
+  let m = s.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+  if (m) {
+    const d = new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0)
+    );
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // 2) dd/MM/yyyy HH:mm:ss — đúng format đang có trong KiotViet Data hiện tại.
+  m = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+  if (m) {
+    const d = new Date(
+      Number(m[3]),
+      Number(m[2]) - 1,
+      Number(m[1]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0)
+    );
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // Không dùng new Date(string) cho chuỗi ngày lạ vì browser có thể hiểu sai DD/MM.
+  return null;
+}
+
+function localDateKey(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 function fmtVND(n) {
   if (n == null || isNaN(n)) return "0";
@@ -939,6 +989,16 @@ function App() {
         inventoryValueConfig = [];
       }
       setData({ invoices, tonkho, nhaphang, assortment, tonkhoHistory, inventoryValueConfig });
+
+      // Diagnostic để kiểm tra nguồn dữ liệu thật trong F12 Console.
+      const invalidInvoiceDates = invoices.filter((r) => {
+        const code = cleanText(r["Mã hóa đơn"]);
+        return code && !parseDate(r["Giờ đến"]);
+      }).length;
+      console.log("[Invoices] Rows từ Google Sheets:", invoices.length);
+      console.log("[Invoices] Dòng có Mã hóa đơn nhưng lỗi ngày:", invalidInvoiceDates);
+      console.log("[Invoices] Ví dụ dòng đầu:", invoices[0] || null);
+      console.log("[Invoices] Ví dụ dòng cuối:", invoices[invoices.length - 1] || null);
       setLastSync(new Date());
     } catch (e) {
       setError(e.message || String(e));
@@ -973,16 +1033,30 @@ function App() {
   // ============================================================
   const distinctInvoices = useMemo(() => {
     const map = new Map();
+
     data.invoices.forEach((row) => {
       const code = cleanText(row["Mã hóa đơn"]);
-      if (!code || map.has(code)) return;
-      map.set(code, {
-        code,
-        branch: cleanText(row["Chi nhánh"]),
-        date: parseDate(cleanText(row["Giờ đến"])),
-        total: safeNumber(row["Tổng tiền hàng"]),
-      });
+      const branch = cleanText(row["Chi nhánh"]);
+      if (!code || !branch) return;
+
+      // File "Chi tiết hóa đơn" có nhiều dòng sản phẩm cho cùng một hóa đơn.
+      // Doanh thu phải lấy MỖI HÓA ĐƠN 1 LẦN, không SUM trực tiếp cột Tổng tiền hàng.
+      // Ghép cả Chi nhánh + Mã hóa đơn để tránh trùng mã giữa các sân.
+      const key = `${branch}|${code}`;
+      const date = parseDate(row["Giờ đến"]);
+      const total = safeNumber(row["Tổng tiền hàng"]);
+
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, { code, branch, date, total });
+        return;
+      }
+
+      // Nếu dòng đầu thiếu ngày/tiền nhưng dòng sau có dữ liệu, bổ sung lại.
+      if (!existing.date && date) existing.date = date;
+      if (total > existing.total) existing.total = total;
     });
+
     return Array.from(map.values());
   }, [data.invoices]);
 
@@ -1667,7 +1741,7 @@ function Dashboard({ distinctInvoices, forecast }) {
 
   const dailyMap = {};
   recent.forEach((i) => {
-    const key = i.date.toISOString().slice(0, 10);
+    const key = localDateKey(i.date);
     dailyMap[key] = (dailyMap[key] || 0) + i.total;
   });
   const dailyData = Object.entries(dailyMap)
