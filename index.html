@@ -1045,7 +1045,8 @@ function App() {
   // Trạng thái CQT / Số HĐĐT / Ký hiệu HĐĐT / Tính chất HĐĐT không làm thay đổi
   // forecast. safeNumber/cleanText bên trên giúp dữ liệu cũ có "nan" không làm hỏng KPI.
   // ============================================================
-  // DERIVED: distinct invoices (revenue at invoice grain, not line-item)
+  // DERIVED: Hóa đơn distinct chỉ dùng để ĐẾM SỐ HÓA ĐƠN.
+  // DOANH THU phải SUM cột AN = "Thành tiền" theo từng dòng sản phẩm.
   // ============================================================
   const distinctInvoices = useMemo(() => {
     const map = new Map();
@@ -1055,35 +1056,44 @@ function App() {
       const branch = cleanText(row["Chi nhánh"]);
       if (!code || !branch) return;
 
-      // File "Chi tiết hóa đơn" có nhiều dòng sản phẩm cho cùng một hóa đơn.
-      // Doanh thu phải lấy MỖI HÓA ĐƠN 1 LẦN, không SUM trực tiếp cột Tổng tiền hàng.
-      // Ghép cả Chi nhánh + Mã hóa đơn để tránh trùng mã giữa các sân.
       const key = `${branch}|${code}`;
       const date = parseDate(row["Giờ đến"]);
-      const total = safeNumber(row["Tổng tiền hàng"]);
 
       const existing = map.get(key);
       if (!existing) {
-        map.set(key, { code, branch, date, total });
+        map.set(key, { code, branch, date });
         return;
       }
 
-      // Nếu dòng đầu thiếu ngày/tiền nhưng dòng sau có dữ liệu, bổ sung lại.
       if (!existing.date && date) existing.date = date;
-      if (total > existing.total) existing.total = total;
     });
 
     return Array.from(map.values());
   }, [data.invoices]);
 
+  const invoiceSalesLines = useMemo(() => {
+    return data.invoices
+      .map((row) => ({
+        branch: cleanText(row["Chi nhánh"]),
+        code: cleanText(row["Mã hóa đơn"]),
+        date: parseDate(row["Giờ đến"]),
+        sku: cleanText(row["Mã hàng"]),
+        amount: safeNumber(row["Thành tiền"]), // CỘT AN
+      }))
+      .filter((r) => r.branch && r.date);
+  }, [data.invoices]);
+
   useEffect(() => {
     if (!data.invoices.length) return;
     const cutoff30 = cutoffForLastNDays(LOOKBACK_DAYS);
-    const distinct30 = distinctInvoices.filter((i) => i.date && i.date >= cutoff30);
-    const revenue30 = distinct30.reduce((sum, i) => sum + safeNumber(i.total), 0);
-    console.log("[Invoices] Distinct hóa đơn 30 ngày:", distinct30.length);
-    console.log("[Invoices] Doanh thu đúng 30 ngày (distinct invoice):", revenue30);
-  }, [data.invoices, distinctInvoices]);
+    const sales30 = invoiceSalesLines.filter((i) => i.date && i.date >= cutoff30);
+    const revenue30 = sales30.reduce((sum, i) => sum + safeNumber(i.amount), 0);
+    const invoiceCount30 = distinctInvoices.filter((i) => i.date && i.date >= cutoff30).length;
+
+    console.log("[Invoices] Số dòng bán hàng 30 ngày:", sales30.length);
+    console.log("[Invoices] Số hóa đơn distinct 30 ngày:", invoiceCount30);
+    console.log("[Invoices] Doanh thu 30 ngày SUM cột AN - Thành tiền:", revenue30);
+  }, [data.invoices, invoiceSalesLines, distinctInvoices]);
 
   // Danh sách Mã hàng chính thức nằm trong Assortment (nếu chưa import lần nào thì rỗng ->
   // KHÔNG đánh dấu "ngoài assortment" cho bất kỳ mã nào cả, tránh cảnh báo sai khi tính năng
@@ -1498,7 +1508,7 @@ function App() {
       <TabBar tab={tab} setTab={setTab} />
       <div className="px-4 md:px-8 pb-16 pt-4">
         {tab === "dashboard" && (
-          <Dashboard distinctInvoices={distinctInvoices} forecast={forecast} />
+          <Dashboard distinctInvoices={distinctInvoices} invoiceSalesLines={invoiceSalesLines} forecast={forecast} />
         )}
         {tab === "forecast" && (
           <ForecastTab
@@ -1757,22 +1767,28 @@ function TabBar({ tab, setTab }) {
 // ============================================================
 // DASHBOARD
 // ============================================================
-function Dashboard({ distinctInvoices, forecast }) {
+function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
   const now = new Date();
   const cutoff = cutoffForLastNDays(LOOKBACK_DAYS, now);
-  const recent = distinctInvoices.filter((i) => i.date && i.date >= cutoff);
+
+  // Doanh thu = SUM cột AN "Thành tiền" theo từng dòng chi tiết.
+  const recentSalesLines = invoiceSalesLines.filter((i) => i.date && i.date >= cutoff);
+
+  // Số hóa đơn vẫn đếm distinct theo Chi nhánh + Mã hóa đơn.
+  const recentInvoices = distinctInvoices.filter((i) => i.date && i.date >= cutoff);
 
   const byBranch = BRANCHES.map((b) => {
-    const items = recent.filter((i) => i.branch === b);
-    const revenue = items.reduce((s, i) => s + i.total, 0);
-    return { branch: b, revenue, count: items.length };
+    const salesLines = recentSalesLines.filter((i) => i.branch === b);
+    const invoices = recentInvoices.filter((i) => i.branch === b);
+    const revenue = salesLines.reduce((s, i) => s + safeNumber(i.amount), 0);
+    return { branch: b, revenue, count: invoices.length };
   });
 
   const dailyMap = {};
-  recent.forEach((i) => {
+  recentSalesLines.forEach((i) => {
     const key = localDateKey(i.date);
     if (!key) return;
-    dailyMap[key] = (dailyMap[key] || 0) + i.total;
+    dailyMap[key] = (dailyMap[key] || 0) + safeNumber(i.amount);
   });
 
   // Luôn dựng đủ 30 ngày lịch, kể cả ngày doanh thu = 0, để trend không bị nhảy/mất ngày.
@@ -1823,7 +1839,7 @@ function Dashboard({ distinctInvoices, forecast }) {
 
       <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
         <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
-          Doanh thu theo ngày (30 ngày qua, toàn hệ thống)
+          Doanh thu theo ngày (30 ngày qua · SUM cột AN - Thành tiền)
         </div>
         <SimpleBarChart data={dailyData} valueKey="revenue" labelKey="date" color={C.court} />
       </div>
