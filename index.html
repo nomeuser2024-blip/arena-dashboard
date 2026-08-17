@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!-- ARENA FINAL AV DATE VERSION 2026-08-17
+     Date source: AV "Ngày"
+     Revenue: SUM AN "Thành tiền"
+     Invoice count: distinct Chi nhánh + Mã hóa đơn
+     Forecast/order formula preserved
+-->
 <html lang="vi">
 <head>
 <meta charset="UTF-8" />
@@ -286,35 +292,18 @@ function parseDate(value) {
     return Number.isNaN(value.getTime()) ? null : value;
   }
 
-  // Fallback nếu dữ liệu ngày bị trả về dạng Excel serial number.
-  // Google Apps Script thường đã format Date thành text, nhưng xử lý thêm để tránh lỗi.
+  // Trường hợp dữ liệu vô tình về dạng Excel serial number.
   if (typeof value === "number" && Number.isFinite(value)) {
     const excelEpoch = new Date(1899, 11, 30);
-    const d = new Date(excelEpoch.getTime() + value * 24 * 3600 * 1000);
+    const d = new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000);
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
   const s = String(value).trim();
-  if (!s || s.toLowerCase() === "nan") return null;
+  if (!s) return null;
 
-  // 1) yyyy-MM-dd HH:mm:ss / yyyy-MM-ddTHH:mm:ss
+  // KiotViet hiện tại: dd/MM/yyyy HH:mm:ss hoặc dd/MM/yyyy HH:mm
   let m = s.match(
-    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
-  );
-  if (m) {
-    const d = new Date(
-      Number(m[1]),
-      Number(m[2]) - 1,
-      Number(m[3]),
-      Number(m[4] || 0),
-      Number(m[5] || 0),
-      Number(m[6] || 0)
-    );
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-
-  // 2) dd/MM/yyyy HH:mm:ss — đúng format đang có trong KiotViet Data hiện tại.
-  m = s.match(
     /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
   if (m) {
@@ -329,16 +318,24 @@ function parseDate(value) {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  // Không dùng new Date(string) cho chuỗi ngày lạ vì browser có thể hiểu sai DD/MM.
-  return null;
-}
+  // Dữ liệu lịch sử / API cũ: yyyy-MM-dd HH:mm:ss hoặc yyyy-MM-dd
+  m = s.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+  if (m) {
+    const d = new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0)
+    );
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
 
-function localDateKey(d) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  // Không dùng new Date("18/07/2026 ...") vì browser có thể hiểu sai DD/MM.
+  return null;
 }
 function fmtVND(n) {
   if (n == null || isNaN(n)) return "0";
@@ -348,24 +345,37 @@ function fmtDate(d) {
   if (!d) return "—";
   return d.toLocaleDateString("vi-VN");
 }
-function startOfLocalDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function startOfLocalDay(value) {
+  const d = value instanceof Date ? new Date(value) : parseDate(value);
+  if (!d || Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-// "30 ngày gần nhất" = hôm nay + 29 ngày trước, tính theo NGÀY LỊCH địa phương.
-// Không dùng now - 30*24h vì cách đó sẽ cắt mất phần đầu của ngày xa nhất.
 function cutoffForLastNDays(days, now = new Date()) {
   const d = startOfLocalDay(now);
+  if (!d) return null;
   d.setDate(d.getDate() - Math.max(0, Number(days || 1) - 1));
   return d;
 }
 
+function localDateKey(value) {
+  const d = startOfLocalDay(value);
+  if (!d) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function invoiceDate(row) {
+  return startOfLocalDay(row && row["Ngày"]);
+}
+
 function daysAgo(d, now = new Date()) {
-  if (!d) return null;
   const a = startOfLocalDay(d);
   const b = startOfLocalDay(now);
+  if (!a || !b) return null;
   return Math.floor((b - a) / (24 * 3600 * 1000));
 }
 // Chuẩn hóa chuỗi để tìm kiếm: bỏ dấu tiếng Việt + viết thường, giúp gõ không dấu vẫn tìm ra
@@ -1006,15 +1016,15 @@ function App() {
       }
       setData({ invoices, tonkho, nhaphang, assortment, tonkhoHistory, inventoryValueConfig });
 
-      // Diagnostic để kiểm tra nguồn dữ liệu thật trong F12 Console.
-      const invalidInvoiceDates = invoices.filter((r) => {
+      const invoiceDateErrors = invoices.filter((r) => {
         const code = cleanText(r["Mã hóa đơn"]);
-        return code && !parseDate(r["Giờ đến"]);
+        return code && !invoiceDate(r);
       }).length;
-      console.log("[Invoices] Rows từ Google Sheets:", invoices.length);
-      console.log("[Invoices] Dòng có Mã hóa đơn nhưng lỗi ngày:", invalidInvoiceDates);
-      console.log("[Invoices] Ví dụ dòng đầu:", invoices[0] || null);
-      console.log("[Invoices] Ví dụ dòng cuối:", invoices[invoices.length - 1] || null);
+
+      console.log("[CHECK] Invoices rows:", invoices.length);
+      console.log("[CHECK] Invoice rows thiếu/lỗi cột AV - Ngày:", invoiceDateErrors);
+      console.log("[CHECK] Date source: cột AV / Ngày");
+      console.log("[CHECK] Revenue source: SUM cột AN / Thành tiền");
       setLastSync(new Date());
     } catch (e) {
       setError(e.message || String(e));
@@ -1041,12 +1051,12 @@ function App() {
 
   // ============================================================
   // INVOICES SCHEMA NOTE:
-  // Backend lưu FULL 47 cột A:AU. Dashboard vẫn đọc theo TÊN cột nên 4 cột mới
+  // Backend lưu FULL 48 cột A:AV. Cột AV "Ngày" là ngày chuẩn dùng cho Dashboard/Forecast.
   // Trạng thái CQT / Số HĐĐT / Ký hiệu HĐĐT / Tính chất HĐĐT không làm thay đổi
   // forecast. safeNumber/cleanText bên trên giúp dữ liệu cũ có "nan" không làm hỏng KPI.
   // ============================================================
-  // DERIVED: Hóa đơn distinct chỉ dùng để ĐẾM SỐ HÓA ĐƠN.
-  // DOANH THU phải SUM cột AN = "Thành tiền" theo từng dòng sản phẩm.
+  // DERIVED: distinct invoices chỉ dùng để ĐẾM SỐ HÓA ĐƠN.
+  // DOANH THU dùng SUM cột AN = "Thành tiền" theo từng dòng sản phẩm.
   // ============================================================
   const distinctInvoices = useMemo(() => {
     const map = new Map();
@@ -1056,16 +1066,16 @@ function App() {
       const branch = cleanText(row["Chi nhánh"]);
       if (!code || !branch) return;
 
+      // Có thể mã hóa đơn trùng giữa chi nhánh -> key phải gồm Chi nhánh + Mã hóa đơn.
       const key = `${branch}|${code}`;
-      const date = parseDate(row["Giờ đến"]);
+      const date = invoiceDate(row);
 
       const existing = map.get(key);
       if (!existing) {
         map.set(key, { code, branch, date });
-        return;
+      } else if (!existing.date && date) {
+        existing.date = date;
       }
-
-      if (!existing.date && date) existing.date = date;
     });
 
     return Array.from(map.values());
@@ -1076,24 +1086,13 @@ function App() {
       .map((row) => ({
         branch: cleanText(row["Chi nhánh"]),
         code: cleanText(row["Mã hóa đơn"]),
-        date: parseDate(row["Giờ đến"]),
+        date: invoiceDate(row),
         sku: cleanText(row["Mã hàng"]),
-        amount: safeNumber(row["Thành tiền"]), // CỘT AN
+        qty: safeNumber(row["Số lượng"]),
+        amount: safeNumber(row["Thành tiền"]), // cột AN
       }))
-      .filter((r) => r.branch && r.date);
+      .filter((row) => row.branch && row.date);
   }, [data.invoices]);
-
-  useEffect(() => {
-    if (!data.invoices.length) return;
-    const cutoff30 = cutoffForLastNDays(LOOKBACK_DAYS);
-    const sales30 = invoiceSalesLines.filter((i) => i.date && i.date >= cutoff30);
-    const revenue30 = sales30.reduce((sum, i) => sum + safeNumber(i.amount), 0);
-    const invoiceCount30 = distinctInvoices.filter((i) => i.date && i.date >= cutoff30).length;
-
-    console.log("[Invoices] Số dòng bán hàng 30 ngày:", sales30.length);
-    console.log("[Invoices] Số hóa đơn distinct 30 ngày:", invoiceCount30);
-    console.log("[Invoices] Doanh thu 30 ngày SUM cột AN - Thành tiền:", revenue30);
-  }, [data.invoices, invoiceSalesLines, distinctInvoices]);
 
   // Danh sách Mã hàng chính thức nằm trong Assortment (nếu chưa import lần nào thì rỗng ->
   // KHÔNG đánh dấu "ngoài assortment" cho bất kỳ mã nào cả, tránh cảnh báo sai khi tính năng
@@ -1150,7 +1149,7 @@ function App() {
       const branch = cleanText(row["Chi nhánh"]);
       const ma = cleanText(row["Mã hàng"]);
       if (!branch || !ma) return;
-      const d = parseDate(cleanText(row["Giờ đến"]));
+      const d = invoiceDate(row);
       const key = branch + "|" + ma;
       if (!salesMap[key]) salesMap[key] = { qty30: 0, qty60: 0, lastDate: null };
       const qty = safeNumber(row["Số lượng"]);
@@ -1168,12 +1167,8 @@ function App() {
         const ma = t["Mã hàng"];
         const key = branch + "|" + ma;
         const sale = salesMap[key] || { qty30: 0, qty60: 0, lastDate: null };
-        // TB bán/ngày phải là trung bình thực, KHÔNG làm tròn lên trước.
-        // VD bán 1 SP/30 ngày => 0.033/ngày, không phải 1/ngày.
-        // Chỉ ROUNDUP ở bước tồn tối thiểu để ra số lượng tồn nguyên cần giữ.
-        const avgDayRaw = sale.qty30 > 0 ? sale.qty30 / LOOKBACK_DAYS : 0;
-        const avgDay = Math.round(avgDayRaw * 100) / 100;
-        const minStock = Math.ceil(avgDayRaw * bufferDays);
+        const avgDay = sale.qty30 > 0 ? Math.ceil(sale.qty30 / LOOKBACK_DAYS) : 0;
+        const minStock = Math.ceil(avgDay * bufferDays);
         // Tồn kho hiện tại đôi khi có giá trị âm/lẻ bất thường (lỗi dữ liệu nguồn, VD do quy đổi
         // đơn vị) -> chặn về tối thiểu 0, tránh needQty bị tính sai thành số lẻ khó hiểu.
         const rawCurrent = safeNumber(t["Tồn kho hiện tại"]);
@@ -1232,7 +1227,7 @@ function App() {
       const branch = cleanText(row["Chi nhánh"]);
       const ma = cleanText(row["Mã hàng"]);
       if (!branch || !ma) return;
-      const d = parseDate(cleanText(row["Giờ đến"]));
+      const d = invoiceDate(row);
       const key = branch + "|" + ma;
       if (!map[key]) map[key] = { qty10: 0, qty20: 0, qty30: 0 };
       const qty = safeNumber(row["Số lượng"]);
@@ -1771,10 +1766,10 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
   const now = new Date();
   const cutoff = cutoffForLastNDays(LOOKBACK_DAYS, now);
 
-  // Doanh thu = SUM cột AN "Thành tiền" theo từng dòng chi tiết.
+  // Doanh thu: SUM từng dòng ở cột AN "Thành tiền".
   const recentSalesLines = invoiceSalesLines.filter((i) => i.date && i.date >= cutoff);
 
-  // Số hóa đơn vẫn đếm distinct theo Chi nhánh + Mã hóa đơn.
+  // Số hóa đơn: distinct theo Chi nhánh + Mã hóa đơn.
   const recentInvoices = distinctInvoices.filter((i) => i.date && i.date >= cutoff);
 
   const byBranch = BRANCHES.map((b) => {
@@ -1791,7 +1786,6 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
     dailyMap[key] = (dailyMap[key] || 0) + safeNumber(i.amount);
   });
 
-  // Luôn dựng đủ 30 ngày lịch, kể cả ngày doanh thu = 0, để trend không bị nhảy/mất ngày.
   const dailyData = [];
   for (let offset = LOOKBACK_DAYS - 1; offset >= 0; offset--) {
     const d = startOfLocalDay(now);
@@ -1839,7 +1833,7 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
 
       <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
         <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
-          Doanh thu theo ngày (30 ngày qua · SUM cột AN - Thành tiền)
+          Doanh thu theo ngày (30 ngày lịch · AV Ngày · SUM AN Thành tiền)
         </div>
         <SimpleBarChart data={dailyData} valueKey="revenue" labelKey="date" color={C.court} />
       </div>
@@ -2036,8 +2030,8 @@ function ForecastTab({
               <Th>Mã hàng</Th>
               <Th align="left">Tên hàng</Th>
               <Th align="left">NCC</Th>
-              <Th formula="Tổng SL bán 30 ngày ÷ 30 (trung bình thực, không ROUNDUP trước)">TB bán/ngày</Th>
-              <Th formula={`ROUNDUP((Tổng SL bán 30 ngày ÷ 30) × ${bufferDays}, 0)`}>Tồn kho tối thiểu</Th>
+              <Th formula="Tổng SL bán 30 ngày ÷ 30">TB bán/ngày</Th>
+              <Th formula={`TB bán/ngày × ${bufferDays} (ngày dự phòng đang chọn)`}>Tồn kho tối thiểu</Th>
               <Th>Tồn hiện tại</Th>
               <Th>SL/gói</Th>
               <Th>Leadtime (ngày)</Th>
