@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL STABLE BUILD: 2026-09-03 - API retry + isolated sheet failures + staged loading + AV/D date fallback -->
+  <!-- FINAL DATE FIX BUILD: 2026-09-03 - robust dd/MM parser + API retry + isolated sheet failures -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -396,53 +396,74 @@ function getDefaultInventoryValueScope() {
 function parseDate(value) {
   if (value === null || value === undefined || value === "") return null;
 
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value;
   }
 
-  // Trường hợp dữ liệu vô tình về dạng Excel serial number.
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const excelEpoch = new Date(1899, 11, 30);
-    const d = new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000);
-    return Number.isNaN(d.getTime()) ? null : d;
+  if (typeof value === "number" && isFinite(value)) {
+    const excelEpochUtc = Date.UTC(1899, 11, 30);
+    const ms = excelEpochUtc + value * 86400000;
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d;
   }
 
   const s = String(value).trim();
   if (!s) return null;
 
-  // KiotViet hiện tại: dd/MM/yyyy HH:mm:ss hoặc dd/MM/yyyy HH:mm
+  // dd/MM/yyyy [HH:mm[:ss]]
   let m = s.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
+
   if (m) {
-    const d = new Date(
-      Number(m[3]),
-      Number(m[2]) - 1,
-      Number(m[1]),
-      Number(m[4] || 0),
-      Number(m[5] || 0),
-      Number(m[6] || 0)
-    );
-    return Number.isNaN(d.getTime()) ? null : d;
+    const day = Number(m[1]);
+    const month = Number(m[2]);
+    const year = Number(m[3]);
+    const hour = Number(m[4] || 0);
+    const minute = Number(m[5] || 0);
+    const second = Number(m[6] || 0);
+
+    const d = new Date(year, month - 1, day, hour, minute, second, 0);
+
+    if (
+      d.getFullYear() === year &&
+      d.getMonth() === month - 1 &&
+      d.getDate() === day &&
+      d.getHours() === hour &&
+      d.getMinutes() === minute &&
+      d.getSeconds() === second
+    ) {
+      return d;
+    }
+    return null;
   }
 
-  // Dữ liệu lịch sử / API cũ: yyyy-MM-dd HH:mm:ss hoặc yyyy-MM-dd
+  // yyyy-MM-dd [HH:mm[:ss]] hoặc yyyy-MM-ddTHH:mm[:ss]
   m = s.match(
-    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
+
   if (m) {
-    const d = new Date(
-      Number(m[1]),
-      Number(m[2]) - 1,
-      Number(m[3]),
-      Number(m[4] || 0),
-      Number(m[5] || 0),
-      Number(m[6] || 0)
-    );
-    return Number.isNaN(d.getTime()) ? null : d;
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    const hour = Number(m[4] || 0);
+    const minute = Number(m[5] || 0);
+    const second = Number(m[6] || 0);
+
+    const d = new Date(year, month - 1, day, hour, minute, second, 0);
+
+    if (
+      d.getFullYear() === year &&
+      d.getMonth() === month - 1 &&
+      d.getDate() === day
+    ) {
+      return d;
+    }
+    return null;
   }
 
-  // Không dùng new Date("18/07/2026 ...") vì browser có thể hiểu sai DD/MM.
+  // Không parse text mơ hồ bằng new Date(text).
   return null;
 }
 function fmtVND(n) {
@@ -477,11 +498,15 @@ function localDateKey(value) {
 }
 
 function invoiceDate(row) {
-  // AV "Ngày" là nguồn chuẩn.
-  // FALLBACK sang D "Thời gian(Giờ đi)" vì đây là ngày nghiệp vụ chuẩn hiện tại.
-  // Nhờ vậy dashboard vẫn chạy nếu AV formula tạm mất.
   if (!row) return null;
-  return startOfLocalDay(row["Ngày"] || row["Thời gian(Giờ đi)"]);
+
+  // AV "Ngày" là nguồn chuẩn; nếu AV trống thì dùng D "Thời gian(Giờ đi)".
+  const raw = row["Ngày"] || row["Thời gian(Giờ đi)"];
+
+  const d = parseDate(raw);
+  if (!d) return null;
+
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 function daysAgo(d, now = new Date()) {
@@ -1191,8 +1216,8 @@ function App() {
       console.log("[FAST LOAD] Core ready.");
       console.log("[CHECK] Invoices rows:", invoices.length);
       console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
-      console.log("[CHECK] Invoice rows không đọc được AV Ngày / D Thời gian(Giờ đi):", invoiceDateErrors);
-      console.log("[CHECK] Date source: AV Ngày; fallback D Thời gian(Giờ đi)");
+      console.log("[CHECK] Invoice rows không parse được AV Ngày / D Thời gian(Giờ đi):", invoiceDateErrors);
+      console.log("[CHECK] Date source: AV Ngày; fallback D Thời gian(Giờ đi); parser dd/MM explicit");
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
       // Dashboard được phép hiện ngay tại đây.
