@@ -7,6 +7,7 @@
 -->
 <html lang="vi">
 <head>
+  <!-- DEBUG API BUILD: 2026-08-19 - strict JSON diagnostics -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -123,12 +124,119 @@ function SimpleBarChart({ data, valueKey, labelKey, color }) {
 
 
 
+
 const DEFAULT_CONFIG = {
   url: "https://script.google.com/macros/s/AKfycbxkunp06-7syVnAwXO0JV8PxG77jKTRxVzMT68IjZ79OCY57RDF7MYryf7BtOTEJAVptQ/exec",
   // KHÔNG ghi token ở đây - file này sẽ được host công khai (GitHub Pages), ai xem source
   // cũng đọc được. Token được người dùng TỰ NHẬP lúc đăng nhập (xem LoginGate bên dưới),
   // lưu trong localStorage của TRÌNH DUYỆT HỌ, không nằm trong file này.
 };
+
+// ============================================================
+// API DEBUG / STRICT JSON PARSER
+// Mục tiêu: nếu Apps Script trả về HTML thay vì JSON (Google login page,
+// deployment error, permission page, redirect...), dashboard sẽ hiện CHÍNH XÁC
+// HTTP status + content-type + URL cuối + 300 ký tự response đầu tiên.
+// Không còn lỗi mơ hồ: Unexpected token '<', "<!DOCTYPE..." is not valid JSON.
+// ============================================================
+function safeUrlForLog(rawUrl) {
+  try {
+    const u = new URL(rawUrl, window.location.href);
+    if (u.searchParams.has("token")) {
+      u.searchParams.set("token", "***");
+    }
+    return u.toString();
+  } catch (_) {
+    return String(rawUrl || "").replace(/([?&]token=)[^&]*/i, "$1***");
+  }
+}
+
+function compactResponsePreview(text, maxLen = 300) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
+async function parseJsonResponseStrict(res, context = "Apps Script API") {
+  const contentType = res.headers.get("content-type") || "(không có content-type)";
+  const finalUrl = safeUrlForLog(res.url || "");
+  const rawText = await res.text();
+  const preview = compactResponsePreview(rawText);
+
+  let json;
+  try {
+    json = JSON.parse(rawText);
+  } catch (parseErr) {
+    let hint = "";
+
+    if (/<!doctype|<html|accounts\.google\.com|ServiceLogin/i.test(rawText)) {
+      hint =
+        " Server đang trả về trang HTML/Google thay vì JSON. " +
+        "Khả năng thường gặp: Web App chưa cho phép truy cập trên máy/tài khoản này, " +
+        "deployment/permission bị redirect, hoặc URL Apps Script không còn trả API JSON.";
+    } else if (!rawText.trim()) {
+      hint =
+        " Response rỗng. Có thể request bị chặn, redirect lỗi, hoặc Apps Script không trả ContentService.";
+    }
+
+    const err = new Error(
+      `[${context}] API KHÔNG trả JSON. ` +
+      `HTTP ${res.status} ${res.statusText || ""}; ` +
+      `Content-Type: ${contentType}; ` +
+      `Redirected: ${res.redirected ? "YES" : "NO"}; ` +
+      `Final URL: ${finalUrl}; ` +
+      `Response đầu: ${preview || "(rỗng)"}.${hint}`
+    );
+
+    err.name = "ApiNonJsonError";
+    err.httpStatus = res.status;
+    err.contentType = contentType;
+    err.finalUrl = finalUrl;
+    err.responsePreview = preview;
+    err.originalParseError = parseErr;
+
+    console.error("[API DEBUG] Non-JSON response", {
+      context,
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.ok,
+      redirected: res.redirected,
+      contentType,
+      finalUrl,
+      responsePreview: preview,
+    });
+
+    throw err;
+  }
+
+  if (!res.ok) {
+    const serverMessage =
+      json && typeof json === "object"
+        ? (json.error || json.message || JSON.stringify(json).slice(0, 300))
+        : String(json);
+
+    const err = new Error(
+      `[${context}] HTTP ${res.status} ${res.statusText || ""}. ` +
+      `Server trả: ${serverMessage}`
+    );
+    err.name = "ApiHttpError";
+    err.httpStatus = res.status;
+
+    console.error("[API DEBUG] HTTP error", {
+      context,
+      status: res.status,
+      statusText: res.statusText,
+      contentType,
+      finalUrl,
+      json,
+    });
+
+    throw err;
+  }
+
+  return json;
+}
 
 // Danh sách workflow hiển thị trên nút bấm — việc gọi GitHub API thật sự nằm
 // ở phía Apps Script (server-side), token GitHub KHÔNG nằm trong code client này.
@@ -607,7 +715,10 @@ function App() {
       try {
         const url = `${config.url}?token=${encodeURIComponent(config.token)}&action=trigger_workflow&workflow=${encodeURIComponent(workflowId)}`;
         const res = await fetch(url);
-        const json = await res.json();
+        const json = await parseJsonResponseStrict(
+          res,
+          `Trigger workflow ${workflowId}`
+        );
         if (json.error) throw new Error(json.error);
         setWorkflowStatus((s) => ({ ...s, [workflowId]: "done" }));
         setTimeout(() => setWorkflowStatus((s) => ({ ...s, [workflowId]: "idle" })), 8000);
@@ -623,7 +734,10 @@ function App() {
     async (sheetName) => {
       const url = `${config.url}?token=${encodeURIComponent(config.token)}&sheet=${encodeURIComponent(sheetName)}`;
       const res = await fetch(url);
-      const json = await res.json();
+      const json = await parseJsonResponseStrict(
+        res,
+        `Đọc sheet ${sheetName}`
+      );
       if (json.error) throw new Error(json.error);
       return Array.isArray(json) ? json : [];
     },
@@ -690,7 +804,10 @@ function App() {
           }),
         });
 
-        const json = await res.json();
+        const json = await parseJsonResponseStrict(
+          res,
+          `Import tồn kho ${branch} -> ${sheetName}`
+        );
         if (json.error) throw new Error(json.error);
 
         setImportStatus((s) => ({ ...s, [branch]: "done" }));
@@ -755,7 +872,10 @@ function App() {
           ]),
         }),
       });
-      const json = await res.json();
+      const json = await parseJsonResponseStrict(
+        res,
+        "Ghi sheet Assortment"
+      );
       if (json.error) throw new Error(json.error);
       return json;
     },
@@ -958,7 +1078,10 @@ function App() {
             rows: clean.map((r) => [r.ma, r.ten, r.dvt, r.yn]),
           }),
         });
-        const json = await res.json();
+        const json = await parseJsonResponseStrict(
+          res,
+          "Ghi sheet GiaTriTon_Config"
+        );
         if (json.error) throw new Error(json.error);
         setInventoryValueConfigStatus("done");
         setInventoryValueConfigMessage(`Đã lưu ${json.rowsWritten ?? clean.length} mã vào GiaTriTon_Config.`);
