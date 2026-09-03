@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- DEBUG API BUILD: 2026-08-19 - strict JSON diagnostics -->
+  <!-- FAST SAFE BUILD: 2026-09-03 - strict API debug + staged loading + invoice date fallback -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -477,7 +477,10 @@ function localDateKey(value) {
 }
 
 function invoiceDate(row) {
-  return startOfLocalDay(row && row["Ngày"]);
+  // AV "Ngày" là nguồn chuẩn.
+  // FALLBACK sang C "Giờ đến" để dashboard không về 0 nếu AV formula bị mất/tạm lỗi.
+  if (!row) return null;
+  return startOfLocalDay(row["Ngày"] || row["Giờ đến"]);
 }
 
 function daysAgo(d, now = new Date()) {
@@ -1099,59 +1102,81 @@ function App() {
 
   const syncData = useCallback(async () => {
     if (!config || !config.url || !config.token) return;
+
     setLoading(true);
     setError(null);
+
     try {
-      // Tồn Kho giờ tách thành 3 sheet riêng theo chi nhánh (TonKho_ARENA01/02/03) thay vì
-      // 1 sheet "TonKho" gộp chung như trước. Mỗi sheet đã có sẵn cột "Kho" ghi đúng tên chi
-      // nhánh (do script Python tự thêm) -> chỉ cần gộp lại thành 1 mảng là có ĐÚNG shape dữ
-      // liệu mà phần forecast/cảnh báo/tạo PO phía dưới đang mong đợi, không cần sửa gì thêm.
+      // ========================================================
+      // FAST LOAD - PHASE 1:
+      // Chỉ tải dữ liệu bắt buộc để Dashboard lên trước:
+      // - Invoices
+      // - Tồn kho 3 chi nhánh
       //
-      // "Assortment" là sheet TÙY CHỌN (có thể chưa từng được tạo nếu chưa import lần nào) ->
-      // fetch riêng, lỗi/không tồn tại thì coi như danh mục rỗng, KHÔNG làm hỏng cả lần sync.
-      const [invoices, tonkho01, tonkho02, tonkho03, nhaphang] = await Promise.all([
+      // KHÔNG chờ NhapHang / Assortment / History / GiaTriTon_Config
+      // trước khi render Dashboard.
+      // ========================================================
+      const [invoices, tonkho01, tonkho02, tonkho03] = await Promise.all([
         fetchSheet("Invoices"),
         fetchSheet("TonKho_ARENA01"),
         fetchSheet("TonKho_ARENA02"),
         fetchSheet("TonKho_ARENA03"),
-        fetchSheet("NhapHang"),
       ]);
+
       const tonkho = [...tonkho01, ...tonkho02, ...tonkho03];
-      let assortment = [];
-      try {
-        assortment = await fetchSheet("Assortment");
-      } catch (e) {
-        assortment = [];
-      }
-      // "TonKho_History" là sheet TÙY CHỌN (script đồng bộ tồn kho tự tạo dần theo ngày) ->
-      // fetch riêng, lỗi/chưa có thì coi như rỗng, KHÔNG làm hỏng cả lần sync.
-      let tonkhoHistory = [];
-      try {
-        tonkhoHistory = await fetchSheet("TonKho_History");
-      } catch (e) {
-        tonkhoHistory = [];
-      }
-      let inventoryValueConfig = [];
-      try {
-        inventoryValueConfig = await fetchSheet("GiaTriTon_Config");
-      } catch (e) {
-        inventoryValueConfig = [];
-      }
-      setData({ invoices, tonkho, nhaphang, assortment, tonkhoHistory, inventoryValueConfig });
+
+      // Giữ dữ liệu phụ cũ (nếu đang refresh) thay vì xóa trắng.
+      setData((prev) => ({
+        ...prev,
+        invoices,
+        tonkho,
+      }));
 
       const invoiceDateErrors = invoices.filter((r) => {
         const code = cleanText(r["Mã hóa đơn"]);
         return code && !invoiceDate(r);
       }).length;
 
+      console.log("[FAST LOAD] Core ready.");
       console.log("[CHECK] Invoices rows:", invoices.length);
-      console.log("[CHECK] Invoice rows thiếu/lỗi cột AV - Ngày:", invoiceDateErrors);
-      console.log("[CHECK] Date source: cột AV / Ngày");
-      console.log("[CHECK] Revenue source: SUM cột AN / Thành tiền");
+      console.log("[CHECK] Invoice rows không đọc được Ngày/ Giờ đến:", invoiceDateErrors);
+      console.log("[CHECK] Date source: AV Ngày; fallback C Giờ đến");
+      console.log("[CHECK] Revenue source: SUM AN Thành tiền");
+
+      // Dashboard được phép hiện ngay tại đây.
       setLastSync(new Date());
+      setLoading(false);
+
+      // ========================================================
+      // FAST LOAD - PHASE 2 (BACKGROUND):
+      // Tải song song các sheet chỉ cần cho PO / Assortment /
+      // Tồn theo ngày / Giá trị tồn.
+      // Không khóa Dashboard trong lúc chờ.
+      // ========================================================
+      Promise.allSettled([
+        fetchSheet("NhapHang"),
+        fetchSheet("Assortment"),
+        fetchSheet("TonKho_History"),
+        fetchSheet("GiaTriTon_Config"),
+      ]).then((results) => {
+        const [nhapHangR, assortmentR, historyR, valueCfgR] = results;
+
+        setData((prev) => ({
+          ...prev,
+          nhaphang: nhapHangR.status === "fulfilled" ? nhapHangR.value : prev.nhaphang,
+          assortment: assortmentR.status === "fulfilled" ? assortmentR.value : prev.assortment,
+          tonkhoHistory: historyR.status === "fulfilled" ? historyR.value : prev.tonkhoHistory,
+          inventoryValueConfig: valueCfgR.status === "fulfilled" ? valueCfgR.value : prev.inventoryValueConfig,
+        }));
+
+        results.forEach((r, i) => {
+          if (r.status === "rejected") {
+            console.warn("[BACKGROUND LOAD] optional sheet failed", i, r.reason);
+          }
+        });
+      });
     } catch (e) {
       setError(e.message || String(e));
-    } finally {
       setLoading(false);
     }
   }, [config, fetchSheet]);
