@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FAST SAFE BUILD: 2026-09-03 - strict API debug + staged loading + invoice date fallback -->
+  <!-- FINAL STABLE BUILD: 2026-09-03 - API retry + isolated sheet failures + staged loading + AV/D date fallback -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -478,9 +478,10 @@ function localDateKey(value) {
 
 function invoiceDate(row) {
   // AV "Ngày" là nguồn chuẩn.
-  // FALLBACK sang C "Giờ đến" để dashboard không về 0 nếu AV formula bị mất/tạm lỗi.
+  // FALLBACK sang D "Thời gian(Giờ đi)" vì đây là ngày nghiệp vụ chuẩn hiện tại.
+  // Nhờ vậy dashboard vẫn chạy nếu AV formula tạm mất.
   if (!row) return null;
-  return startOfLocalDay(row["Ngày"] || row["Giờ đến"]);
+  return startOfLocalDay(row["Ngày"] || row["Thời gian(Giờ đi)"]);
 }
 
 function daysAgo(d, now = new Date()) {
@@ -734,15 +735,49 @@ function App() {
   );
 
   const fetchSheet = useCallback(
-    async (sheetName) => {
-      const url = `${config.url}?token=${encodeURIComponent(config.token)}&sheet=${encodeURIComponent(sheetName)}`;
-      const res = await fetch(url);
-      const json = await parseJsonResponseStrict(
-        res,
-        `Đọc sheet ${sheetName}`
-      );
-      if (json.error) throw new Error(json.error);
-      return Array.isArray(json) ? json : [];
+    async (sheetName, retries = 3) => {
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const url =
+            `${config.url}?token=${encodeURIComponent(config.token)}` +
+            `&sheet=${encodeURIComponent(sheetName)}` +
+            `&_=${Date.now()}_${attempt}`;
+
+          const res = await fetch(url, {
+            cache: "no-store",
+            redirect: "follow",
+          });
+
+          const json = await parseJsonResponseStrict(
+            res,
+            `Đọc sheet ${sheetName} (lần ${attempt}/${retries})`
+          );
+
+          if (json.error) throw new Error(json.error);
+
+          if (attempt > 1) {
+            console.info(`[API RETRY] ${sheetName} đã thành công ở lần ${attempt}.`);
+          }
+
+          return Array.isArray(json) ? json : [];
+        } catch (e) {
+          lastError = e;
+          console.warn(
+            `[API RETRY] ${sheetName} lỗi lần ${attempt}/${retries}:`,
+            e
+          );
+
+          if (attempt < retries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1200 * attempt)
+            );
+          }
+        }
+      }
+
+      throw lastError || new Error(`Không tải được sheet ${sheetName}.`);
     },
     [config]
   );
@@ -1116,21 +1151,37 @@ function App() {
       // KHÔNG chờ NhapHang / Assortment / History / GiaTriTon_Config
       // trước khi render Dashboard.
       // ========================================================
-      const [invoices, tonkho01, tonkho02, tonkho03] = await Promise.all([
-        fetchSheet("Invoices"),
-        fetchSheet("TonKho_ARENA01"),
-        fetchSheet("TonKho_ARENA02"),
-        fetchSheet("TonKho_ARENA03"),
+      // Invoices là dữ liệu bắt buộc cho doanh thu.
+      // Tải riêng để lỗi 1 sheet tồn kho KHÔNG kéo cả Dashboard về 0.
+      const invoices = await fetchSheet("Invoices", 3);
+
+      const tonkhoResults = await Promise.allSettled([
+        fetchSheet("TonKho_ARENA01", 3),
+        fetchSheet("TonKho_ARENA02", 3),
+        fetchSheet("TonKho_ARENA03", 3),
       ]);
 
-      const tonkho = [...tonkho01, ...tonkho02, ...tonkho03];
+      const successfulTonKho = tonkhoResults
+        .filter((r) => r.status === "fulfilled")
+        .flatMap((r) => r.value);
 
-      // Giữ dữ liệu phụ cũ (nếu đang refresh) thay vì xóa trắng.
+      const failedTonKhoNames = ["TonKho_ARENA01", "TonKho_ARENA02", "TonKho_ARENA03"]
+        .filter((_, i) => tonkhoResults[i].status === "rejected");
+
+      // Nếu ít nhất 1 sheet tồn kho tải được: dùng phần tải được.
+      // Nếu cả 3 cùng lỗi tạm thời: giữ tồn kho cũ, tuyệt đối không xóa trắng state.
       setData((prev) => ({
         ...prev,
         invoices,
-        tonkho,
+        tonkho: successfulTonKho.length > 0 ? successfulTonKho : prev.tonkho,
       }));
+
+      if (failedTonKhoNames.length) {
+        console.warn(
+          "[CORE LOAD] Một số sheet tồn kho chưa tải được sau retry:",
+          failedTonKhoNames
+        );
+      }
 
       const invoiceDateErrors = invoices.filter((r) => {
         const code = cleanText(r["Mã hóa đơn"]);
@@ -1139,8 +1190,9 @@ function App() {
 
       console.log("[FAST LOAD] Core ready.");
       console.log("[CHECK] Invoices rows:", invoices.length);
-      console.log("[CHECK] Invoice rows không đọc được Ngày/ Giờ đến:", invoiceDateErrors);
-      console.log("[CHECK] Date source: AV Ngày; fallback C Giờ đến");
+      console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
+      console.log("[CHECK] Invoice rows không đọc được AV Ngày / D Thời gian(Giờ đi):", invoiceDateErrors);
+      console.log("[CHECK] Date source: AV Ngày; fallback D Thời gian(Giờ đi)");
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
       // Dashboard được phép hiện ngay tại đây.
@@ -1154,10 +1206,10 @@ function App() {
       // Không khóa Dashboard trong lúc chờ.
       // ========================================================
       Promise.allSettled([
-        fetchSheet("NhapHang"),
-        fetchSheet("Assortment"),
-        fetchSheet("TonKho_History"),
-        fetchSheet("GiaTriTon_Config"),
+        fetchSheet("NhapHang", 3),
+        fetchSheet("Assortment", 3),
+        fetchSheet("TonKho_History", 3),
+        fetchSheet("GiaTriTon_Config", 3),
       ]).then((results) => {
         const [nhapHangR, assortmentR, historyR, valueCfgR] = results;
 
@@ -1199,7 +1251,7 @@ function App() {
 
   // ============================================================
   // INVOICES SCHEMA NOTE:
-  // Backend lưu FULL 48 cột A:AV. Cột AV "Ngày" là ngày chuẩn dùng cho Dashboard/Forecast.
+  // Backend lưu FULL 48 cột A:AV. Cột AV "Ngày" là ngày chuẩn dùng cho Dashboard/Forecast; fallback là cột D "Thời gian(Giờ đi)".
   // Trạng thái CQT / Số HĐĐT / Ký hiệu HĐĐT / Tính chất HĐĐT không làm thay đổi
   // forecast. safeNumber/cleanText bên trên giúp dữ liệu cũ có "nan" không làm hỏng KPI.
   // ============================================================
