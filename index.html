@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL DATE FIX BUILD: 2026-09-03 - robust dd/MM parser + API retry + isolated sheet failures -->
+  <!-- FINAL DATE NORMALIZE BUILD: 2026-09-03 - fixes Google en_US day/month swaps in dashboard only -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -400,49 +400,20 @@ function parseDate(value) {
     return value;
   }
 
+  // Numeric Google Sheets / Excel serial.
   if (typeof value === "number" && isFinite(value)) {
     const excelEpochUtc = Date.UTC(1899, 11, 30);
-    const ms = excelEpochUtc + value * 86400000;
-    const d = new Date(ms);
+    const d = new Date(excelEpochUtc + value * 86400000);
     return isNaN(d.getTime()) ? null : d;
   }
 
   const s = String(value).trim();
   if (!s) return null;
 
-  // dd/MM/yyyy [HH:mm[:ss]]
+  // ISO yyyy-MM-dd [HH:mm[:ss]]: không mơ hồ.
   let m = s.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
-  );
-
-  if (m) {
-    const day = Number(m[1]);
-    const month = Number(m[2]);
-    const year = Number(m[3]);
-    const hour = Number(m[4] || 0);
-    const minute = Number(m[5] || 0);
-    const second = Number(m[6] || 0);
-
-    const d = new Date(year, month - 1, day, hour, minute, second, 0);
-
-    if (
-      d.getFullYear() === year &&
-      d.getMonth() === month - 1 &&
-      d.getDate() === day &&
-      d.getHours() === hour &&
-      d.getMinutes() === minute &&
-      d.getSeconds() === second
-    ) {
-      return d;
-    }
-    return null;
-  }
-
-  // yyyy-MM-dd [HH:mm[:ss]] hoặc yyyy-MM-ddTHH:mm[:ss]
-  m = s.match(
     /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
-
   if (m) {
     const year = Number(m[1]);
     const month = Number(m[2]);
@@ -450,20 +421,80 @@ function parseDate(value) {
     const hour = Number(m[4] || 0);
     const minute = Number(m[5] || 0);
     const second = Number(m[6] || 0);
-
     const d = new Date(year, month - 1, day, hour, minute, second, 0);
 
     if (
       d.getFullYear() === year &&
       d.getMonth() === month - 1 &&
       d.getDate() === day
-    ) {
-      return d;
-    }
+    ) return d;
+
     return null;
   }
 
-  // Không parse text mơ hồ bằng new Date(text).
+  // Google Sheet hiện tại có một phần dữ liệu bị locale en_US đảo DD/MM.
+  // Với chuỗi a/b/yyyy, tạo CẢ HAI cách hiểu:
+  //   A = dd/MM/yyyy
+  //   B = MM/dd/yyyy
+  // Sau đó chọn ngày hợp lý nhất so với ngày hiện tại.
+  m = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const year = Number(m[3]);
+    const hour = Number(m[4] || 0);
+    const minute = Number(m[5] || 0);
+    const second = Number(m[6] || 0);
+
+    const makeValid = (day, month) => {
+      if (
+        !Number.isInteger(day) || !Number.isInteger(month) ||
+        month < 1 || month > 12 || day < 1 || day > 31
+      ) return null;
+
+      const d = new Date(year, month - 1, day, hour, minute, second, 0);
+
+      if (
+        d.getFullYear() === year &&
+        d.getMonth() === month - 1 &&
+        d.getDate() === day
+      ) return d;
+
+      return null;
+    };
+
+    const ddmm = makeValid(a, b);
+    const mmdd = makeValid(b, a);
+
+    if (ddmm && !mmdd) return ddmm;
+    if (!ddmm && mmdd) return mmdd;
+    if (!ddmm && !mmdd) return null;
+
+    // Nếu cả hai đều hợp lệ (01..12 / 01..12), chọn candidate gần "hôm nay" hơn.
+    // Đây xử lý đúng dữ liệu hiện tại kiểu:
+    //   08/01/2026 -> 01/08/2026
+    //   08/09/2026 -> 09/08/2026 (vì 08/09 còn ở tương lai)
+    // nhưng vẫn giữ 01/09/2026 là 01/09/2026.
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const score = (d) => {
+      const diffDays = Math.round((d - today) / 86400000);
+
+      // Dashboard là dữ liệu gần hiện tại.
+      // Future > 1 ngày bị phạt rất mạnh.
+      if (diffDays > 1) return 100000 + diffDays;
+
+      return Math.abs(diffDays);
+    };
+
+    return score(ddmm) <= score(mmdd) ? ddmm : mmdd;
+  }
+
+  // Không dùng new Date(text) cho chuỗi mơ hồ.
   return null;
 }
 function fmtVND(n) {
@@ -500,7 +531,8 @@ function localDateKey(value) {
 function invoiceDate(row) {
   if (!row) return null;
 
-  // AV "Ngày" là nguồn chuẩn; nếu AV trống thì dùng D "Thời gian(Giờ đi)".
+  // AV "Ngày" là nguồn chuẩn.
+  // Nếu AV trống thì dùng D "Thời gian(Giờ đi)".
   const raw = row["Ngày"] || row["Thời gian(Giờ đi)"];
 
   const d = parseDate(raw);
@@ -1217,7 +1249,7 @@ function App() {
       console.log("[CHECK] Invoices rows:", invoices.length);
       console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
       console.log("[CHECK] Invoice rows không parse được AV Ngày / D Thời gian(Giờ đi):", invoiceDateErrors);
-      console.log("[CHECK] Date source: AV Ngày; fallback D Thời gian(Giờ đi); parser dd/MM explicit");
+      console.log("[CHECK] Date source: AV Ngày; fallback D; auto-normalize DD/MM <-> MM/DD theo ngày gần hiện tại");
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
       // Dashboard được phép hiện ngay tại đây.
