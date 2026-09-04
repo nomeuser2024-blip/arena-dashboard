@@ -1,5 +1,13 @@
 <!DOCTYPE html>
-<!-- V23 BUILD: invoice date reads directly from column D; AV is reference only -->
+<!-- ARENA FINAL PO-CONSOLIDATED VERSION 2026-08-17
+     Date source: D "Thời gian(Giờ đi)"
+     Revenue: SUM AN "Thành tiền"
+     Invoice count: distinct Chi nhánh + Mã hóa đơn
+     Forecast/order formula preserved
+-->
+<html lang="vi">
+<head>
+  <!-- FINAL V23 BUILD: date from D Thời gian(Giờ đi) ONLY + API retry -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -489,19 +497,15 @@ function localDateKey(value) {
 function invoiceDate(row) {
   if (!row) return null;
 
-  // NGUỒN NGÀY DUY NHẤT CHO DASHBOARD:
-  // cột D = "Thời gian(Giờ đi)".
-  // AV chỉ để tham khảo trên Google Sheet, KHÔNG dùng để tính Dashboard.
+  // NGUỒN NGÀY DUY NHẤT CHO INVOICES:
+  // D = "Thời gian(Giờ đi)"
+  // Không dùng AV "Ngày" nữa.
   const rawD = row["Thời gian(Giờ đi)"];
-
   const d = parseDate(rawD);
+
   if (!d) return null;
 
-  return new Date(
-    d.getFullYear(),
-    d.getMonth(),
-    d.getDate()
-  );
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 function daysAgo(d, now = new Date()) {
@@ -1211,7 +1215,7 @@ function App() {
       console.log("[FAST LOAD] Core ready.");
       console.log("[CHECK] Invoices rows:", invoices.length);
       console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
-      console.log("[CHECK] Invoice rows không parse được AV Ngày / D Thời gian(Giờ đi):", invoiceDateErrors);
+      console.log("[CHECK] Invoice rows không parse được D Thời gian(Giờ đi):", invoiceDateErrors);
       console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY");
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
@@ -1271,7 +1275,7 @@ function App() {
 
   // ============================================================
   // INVOICES SCHEMA NOTE:
-  // Backend lưu FULL 48 cột A:AV. Cột AV "Ngày" là ngày chuẩn dùng cho Dashboard/Forecast; fallback là cột D "Thời gian(Giờ đi)".
+  // Backend lưu FULL 48 cột A:AV. Dashboard/Forecast dùng trực tiếp cột D "Thời gian(Giờ đi)" làm ngày chuẩn; AV "Ngày" không còn được dùng cho Invoices.
   // Trạng thái CQT / Số HĐĐT / Ký hiệu HĐĐT / Tính chất HĐĐT không làm thay đổi
   // forecast. safeNumber/cleanText bên trên giúp dữ liệu cũ có "nan" không làm hỏng KPI.
   // ============================================================
