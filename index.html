@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL V24.1 BUILD: fixed JS syntax + D-only + auto-detect DD/MM vs MM/DD + API retry -->
+  <!-- FINAL V25 DIAGNOSTIC BUILD: D-only + per-day API audit + chart audit -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -604,6 +604,93 @@ function saveJSON(key, value) {
   } catch (e) {
     console.error("storage error", e);
   }
+}
+
+
+// ============================================================
+// INVOICE API DIAGNOSTIC
+// Mục tiêu: chứng minh dữ liệu mất ở API hay ở bước group/chart.
+// ============================================================
+function auditInvoiceRows(rows, now = new Date(), days = 40) {
+  const result = {
+    totalRows: Array.isArray(rows) ? rows.length : 0,
+    validDateRows: 0,
+    invalidDateRows: 0,
+    minDate: null,
+    maxDate: null,
+    perDay: {},
+    perDayRevenue: {},
+    perDayInvoices: {},
+  };
+
+  const invoiceSets = {};
+
+  (rows || []).forEach((row) => {
+    const d = invoiceDate(row);
+    if (!d) {
+      result.invalidDateRows++;
+      return;
+    }
+
+    result.validDateRows++;
+
+    const key = localDateKey(d);
+    if (!key) return;
+
+    result.minDate = !result.minDate || key < result.minDate ? key : result.minDate;
+    result.maxDate = !result.maxDate || key > result.maxDate ? key : result.maxDate;
+
+    result.perDay[key] = (result.perDay[key] || 0) + 1;
+    result.perDayRevenue[key] = (result.perDayRevenue[key] || 0) + safeNumber(row["Thành tiền"]);
+
+    if (!invoiceSets[key]) invoiceSets[key] = new Set();
+    const branch = cleanText(row["Chi nhánh"]);
+    const code = cleanText(row["Mã hóa đơn"]);
+    if (branch && code) invoiceSets[key].add(branch + "|" + code);
+  });
+
+  Object.keys(invoiceSets).forEach((key) => {
+    result.perDayInvoices[key] = invoiceSets[key].size;
+  });
+
+  const lastDays = [];
+  const base = startOfLocalDay(now);
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const d = new Date(base);
+    d.setDate(d.getDate() - offset);
+    const key = localDateKey(d);
+    lastDays.push({
+      date: key,
+      rows: result.perDay[key] || 0,
+      invoices: result.perDayInvoices[key] || 0,
+      revenue: result.perDayRevenue[key] || 0,
+    });
+  }
+
+  result.lastDays = lastDays;
+  result.missingDates = lastDays.filter((x) => x.rows === 0).map((x) => x.date);
+
+  return result;
+}
+
+function printInvoiceAudit(audit) {
+  console.group("[INVOICE AUDIT] API -> Dashboard");
+  console.log("Total API rows:", audit.totalRows);
+  console.log("Valid D rows:", audit.validDateRows);
+  console.log("Invalid D rows:", audit.invalidDateRows);
+  console.log("Min date:", audit.minDate);
+  console.log("Max date:", audit.maxDate);
+  console.log("Detected slash mode:", INVOICE_D_TEXT_MODE);
+  console.log("Missing dates in audit window:", audit.missingDates);
+  console.table(
+    audit.lastDays.map((x) => ({
+      date: x.date,
+      rows: x.rows,
+      invoices: x.invoices,
+      revenue: x.revenue,
+    }))
+  );
+  console.groupEnd();
 }
 
 // ============================================================
@@ -1228,6 +1315,9 @@ function App() {
       // Chốt format text của cột D từ chính dữ liệu API trước khi mọi KPI/Forecast parse ngày.
       INVOICE_D_TEXT_MODE = detectInvoiceDTextMode(invoices);
       console.log("[CHECK] D text mode auto-detected:", INVOICE_D_TEXT_MODE);
+
+      const invoiceAudit = auditInvoiceRows(invoices, new Date(), 40);
+      printInvoiceAudit(invoiceAudit);
 
       const tonkhoResults = await Promise.allSettled([
         fetchSheet("TonKho_ARENA01", 3),
@@ -2058,6 +2148,16 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
     });
   }
 
+  console.group("[CHART AUDIT] 30 ngày");
+  console.table(
+    dailyData.map((x, idx) => ({
+      idx: idx + 1,
+      date: x.date,
+      revenue: x.revenue,
+    }))
+  );
+  console.groupEnd();
+
   const needOrderCount = forecast.filter((f) => f.needQty > 0).length;
   const staleCount = forecast.filter((f) => f.isStale).length;
 
@@ -2073,6 +2173,19 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
             <div style={{ fontSize: 12, color: "#8a8272" }}>{b.count} hóa đơn · 30 ngày qua</div>
           </div>
         ))}
+      </div>
+
+      <div
+        className="rounded-xl p-3"
+        style={{ background: "#fff7e6", border: `1px solid ${C.amber}` }}
+      >
+        <div style={{ fontWeight: 700, fontSize: 13, color: C.amberDeep }}>
+          V25 Diagnostic đang bật
+        </div>
+        <div style={{ fontSize: 12, color: "#6b6252", marginTop: 3 }}>
+          Nhấn F12 → Console → tìm <b>[INVOICE AUDIT]</b> và <b>[CHART AUDIT]</b>. 
+          Bản này sẽ chỉ rõ ngày nào API trả 0 dòng và ngày nào chart đang group thành 0.
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
