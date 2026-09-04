@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL V25 DIAGNOSTIC BUILD: D-only + per-day API audit + chart audit -->
+  <!-- FINAL V26 BUILD: per-row slash-date disambiguation by recent-past candidate -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -540,18 +540,75 @@ function localDateKey(value) {
   return `${y}-${m}-${day}`;
 }
 
-function invoiceDate(row) {
+function invoiceDate(row, now = new Date()) {
   if (!row) return null;
 
-  // NGUỒN NGÀY DUY NHẤT CHO INVOICES:
-  // D = "Thời gian(Giờ đi)"
-  // Không dùng AV "Ngày" nữa.
   const rawD = row["Thời gian(Giờ đi)"];
-  const d = parseDate(rawD, INVOICE_D_TEXT_MODE);
+  if (rawD === null || rawD === undefined || rawD === "") return null;
 
-  if (!d) return null;
+  if (typeof rawD === "number" || rawD instanceof Date) {
+    const d = parseDate(rawD, "DMY");
+    return d ? new Date(d.getFullYear(), d.getMonth(), d.getDate()) : null;
+  }
 
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const s = String(rawD).trim();
+  if (!s) return null;
+
+  if (/^\d{4}-\d{1,2}-\d{1,2}(?:[T\s]|$)/.test(s)) {
+    const d = parseDate(s, "DMY");
+    return d ? new Date(d.getFullYear(), d.getMonth(), d.getDate()) : null;
+  }
+
+  const m = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const y = Number(m[3]);
+    const hh = Number(m[4] || 0);
+    const mm = Number(m[5] || 0);
+    const ss = Number(m[6] || 0);
+
+    const candidates = [];
+
+    const pushCandidate = (day, month, mode) => {
+      if (month < 1 || month > 12 || day < 1 || day > 31) return;
+      const d = new Date(y, month - 1, day, hh, mm, ss, 0);
+      if (
+        d.getFullYear() === y &&
+        d.getMonth() === month - 1 &&
+        d.getDate() === day
+      ) {
+        candidates.push({ d, mode });
+      }
+    };
+
+    pushCandidate(a, b, "DMY");
+    pushCandidate(b, a, "MDY");
+
+    if (!candidates.length) return null;
+    if (candidates.length === 1) {
+      const d = candidates[0].d;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    const today = startOfLocalDay(now) || new Date();
+    const scored = candidates.map((c) => {
+      const day = startOfLocalDay(c.d);
+      const diffDays = Math.round((day - today) / 86400000);
+      const isFuture = diffDays > 0;
+      const score = isFuture ? 100000 + diffDays : Math.abs(diffDays);
+      return { ...c, score, diffDays };
+    });
+
+    scored.sort((x, y) => x.score - y.score);
+    const chosen = scored[0].d;
+    return new Date(chosen.getFullYear(), chosen.getMonth(), chosen.getDate());
+  }
+
+  return null;
 }
 
 function daysAgo(d, now = new Date()) {
@@ -680,7 +737,7 @@ function printInvoiceAudit(audit) {
   console.log("Invalid D rows:", audit.invalidDateRows);
   console.log("Min date:", audit.minDate);
   console.log("Max date:", audit.maxDate);
-  console.log("Detected slash mode:", INVOICE_D_TEXT_MODE);
+  console.log("Slash parsing:", "PER-ROW AUTO DMY/MDY");
   console.log("Missing dates in audit window:", audit.missingDates);
   console.table(
     audit.lastDays.map((x) => ({
@@ -1312,9 +1369,8 @@ function App() {
       // Tải riêng để lỗi 1 sheet tồn kho KHÔNG kéo cả Dashboard về 0.
       const invoices = await fetchSheet("Invoices", 3);
 
-      // Chốt format text của cột D từ chính dữ liệu API trước khi mọi KPI/Forecast parse ngày.
-      INVOICE_D_TEXT_MODE = detectInvoiceDTextMode(invoices);
-      console.log("[CHECK] D text mode auto-detected:", INVOICE_D_TEXT_MODE);
+      // V26: cột D được xử lý theo từng dòng vì API đang có dấu hiệu trộn DMY/MDY.
+      console.log("[CHECK] Date parser: per-row DMY/MDY disambiguation, prefer nearest non-future date");
 
       const invoiceAudit = auditInvoiceRows(invoices, new Date(), 40);
       printInvoiceAudit(invoiceAudit);
@@ -1356,7 +1412,7 @@ function App() {
       console.log("[CHECK] Invoices rows:", invoices.length);
       console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
       console.log("[CHECK] Invoice rows không parse được D Thời gian(Giờ đi):", invoiceDateErrors);
-      console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY; slash mode =", INVOICE_D_TEXT_MODE);
+      console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY; slash parsing = PER-ROW AUTO");
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
       // Dashboard được phép hiện ngay tại đây.
@@ -2180,7 +2236,7 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
         style={{ background: "#fff7e6", border: `1px solid ${C.amber}` }}
       >
         <div style={{ fontWeight: 700, fontSize: 13, color: C.amberDeep }}>
-          V25 Diagnostic đang bật
+          V26 Diagnostic đang bật
         </div>
         <div style={{ fontSize: 12, color: "#6b6252", marginTop: 3 }}>
           Nhấn F12 → Console → tìm <b>[INVOICE AUDIT]</b> và <b>[CHART AUDIT]</b>. 
@@ -2207,7 +2263,7 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
 
       <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
         <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
-          Doanh thu theo ngày (30 ngày lịch · D Thời gian(Giờ đi) · AUTO DD/MM↔MM/DD · SUM AN Thành tiền)
+          Doanh thu theo ngày (30 ngày lịch · D Thời gian(Giờ đi) · PER-ROW AUTO DATE · SUM AN Thành tiền)
         </div>
         <SimpleBarChart data={dailyData} valueKey="revenue" labelKey="date" color={C.court} />
       </div>
