@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL V23 BUILD: date from D Thời gian(Giờ đi) ONLY + API retry -->
+  <!-- FINAL V24 BUILD: D-only + auto-detect DD/MM vs MM/DD + API retry -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -393,7 +393,48 @@ function getDefaultInventoryValueScope() {
 // ============================================================
 // HELPERS
 // ============================================================
-function parseDate(value) {
+
+// KiotViet/Google Sheets có thể trả cột D theo 2 kiểu text tùy locale:
+//   dd/MM/yyyy  (VD 13/08/2026)
+//   MM/dd/yyyy  (VD 08/13/2026)
+// V23 luôn hiểu dd/MM nên các ngày <= 12 bị đọc sai nếu API thực tế trả MM/dd.
+// V24 tự dò format từ TOÀN BỘ cột D bằng các dòng không mơ hồ.
+let INVOICE_D_TEXT_MODE = "DMY"; // DMY | MDY
+
+function detectInvoiceDTextMode(rows) {
+  let dmyEvidence = 0;
+  let mdyEvidence = 0;
+
+  (rows || []).forEach((row) => {
+    const raw = row && row["Thời gian(Giờ đi)"];
+    if (raw === null || raw === undefined || raw === "") return;
+
+    const s = String(raw).trim();
+
+    // ISO không tham gia dò locale.
+    if (/^\d{4}-\d{1,2}-\d{1,2}(?:[T\s]|$)/.test(s)) return;
+
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T]|$)/);
+    if (!m) return;
+
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+
+    // 13/08 chỉ có thể là DD/MM.
+    if (a > 12 && b >= 1 && b <= 12) dmyEvidence++;
+
+    // 08/13 chỉ có thể là MM/DD.
+    if (b > 12 && a >= 1 && a <= 12) mdyEvidence++;
+  });
+
+  if (mdyEvidence > dmyEvidence) return "MDY";
+  if (dmyEvidence > mdyEvidence) return "DMY";
+
+  // Không đủ dòng không mơ hồ: giữ DMY vì KiotViet export gốc thường là dd/MM.
+  return "DMY";
+}
+
+function parseDate(value, textMode = "DMY") {
   if (value === null || value === undefined || value === "") return null;
 
   if (value instanceof Date && !isNaN(value.getTime())) {
@@ -435,18 +476,23 @@ function parseDate(value) {
     return null;
   }
 
-  // KiotViet text chuẩn: dd/MM/yyyy [HH:mm[:ss]]
+  // Text có dấu "/": tự hiểu theo mode đã dò từ toàn bộ cột D.
+  // DMY: dd/MM/yyyy
+  // MDY: MM/dd/yyyy
   m = s.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
 
   if (m) {
-    const day = Number(m[1]);
-    const month = Number(m[2]);
+    const first = Number(m[1]);
+    const secondPart = Number(m[2]);
     const year = Number(m[3]);
     const hour = Number(m[4] || 0);
     const minute = Number(m[5] || 0);
     const second = Number(m[6] || 0);
+
+    const day = textMode === "MDY" ? secondPart : first;
+    const month = textMode === "MDY" ? first : secondPart;
 
     const d = new Date(year, month - 1, day, hour, minute, second, 0);
 
@@ -501,7 +547,7 @@ function invoiceDate(row) {
   // D = "Thời gian(Giờ đi)"
   // Không dùng AV "Ngày" nữa.
   const rawD = row["Thời gian(Giờ đi)"];
-  const d = parseDate(rawD);
+  const d = parseDate(rawD, INVOICE_D_TEXT_MODE);
 
   if (!d) return null;
 
@@ -1179,6 +1225,10 @@ function App() {
       // Tải riêng để lỗi 1 sheet tồn kho KHÔNG kéo cả Dashboard về 0.
       const invoices = await fetchSheet("Invoices", 3);
 
+      // Chốt format text của cột D từ chính dữ liệu API trước khi mọi KPI/Forecast parse ngày.
+      INVOICE_D_TEXT_MODE = detectInvoiceDTextMode(invoices);
+      console.log("[CHECK] D text mode auto-detected:", INVOICE_D_TEXT_MODE);
+
       const tonkhoResults = await Promise.allSettled([
         fetchSheet("TonKho_ARENA01", 3),
         fetchSheet("TonKho_ARENA02", 3),
@@ -1216,7 +1266,7 @@ function App() {
       console.log("[CHECK] Invoices rows:", invoices.length);
       console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
       console.log("[CHECK] Invoice rows không parse được D Thời gian(Giờ đi):", invoiceDateErrors);
-      console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY");
+      console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY; slash mode = " + INVOICE_D_TEXT_MODE");
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
       // Dashboard được phép hiện ngay tại đây.
@@ -2044,7 +2094,7 @@ function Dashboard({ distinctInvoices, invoiceSalesLines, forecast }) {
 
       <div className="rounded-xl p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
         <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
-          Doanh thu theo ngày (30 ngày lịch · D Thời gian(Giờ đi) · SUM AN Thành tiền)
+          Doanh thu theo ngày (30 ngày lịch · D Thời gian(Giờ đi) · AUTO DD/MM↔MM/DD · SUM AN Thành tiền)
         </div>
         <SimpleBarChart data={dailyData} valueKey="revenue" labelKey="date" color={C.court} />
       </div>
