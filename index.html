@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL V24 BUILD: D-only + auto-detect DD/MM vs MM/DD + API retry -->
+  <!-- FINAL V24.1 BUILD: fixed JS syntax + D-only + auto-detect DD/MM vs MM/DD + API retry -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -1266,7 +1266,7 @@ function App() {
       console.log("[CHECK] Invoices rows:", invoices.length);
       console.log("[CHECK] Tồn kho rows tải thành công:", successfulTonKho.length);
       console.log("[CHECK] Invoice rows không parse được D Thời gian(Giờ đi):", invoiceDateErrors);
-      console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY; slash mode = " + INVOICE_D_TEXT_MODE");
+      console.log("[CHECK] Date source: D Thời gian(Giờ đi) ONLY; slash mode =", INVOICE_D_TEXT_MODE);
       console.log("[CHECK] Revenue source: SUM AN Thành tiền");
 
       // Dashboard được phép hiện ngay tại đây.
