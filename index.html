@@ -7,7 +7,7 @@
 -->
 <html lang="vi">
 <head>
-  <!-- FINAL DATE NORMALIZE BUILD: 2026-09-03 - fixes Google en_US day/month swaps in dashboard only -->
+  <!-- FINAL V22 BUILD: strict AV ISO + deterministic D fallback + API retry -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ARENA - SÀN THỂ THAO</title>
@@ -400,7 +400,7 @@ function parseDate(value) {
     return value;
   }
 
-  // Numeric Google Sheets / Excel serial.
+  // Google Sheets / Excel serial date thật.
   if (typeof value === "number" && isFinite(value)) {
     const excelEpochUtc = Date.UTC(1899, 11, 30);
     const d = new Date(excelEpochUtc + value * 86400000);
@@ -410,10 +410,11 @@ function parseDate(value) {
   const s = String(value).trim();
   if (!s) return null;
 
-  // ISO yyyy-MM-dd [HH:mm[:ss]]: không mơ hồ.
+  // ISO: yyyy-MM-dd [HH:mm[:ss]]
   let m = s.match(
     /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
+
   if (m) {
     const year = Number(m[1]);
     const month = Number(m[2]);
@@ -421,77 +422,42 @@ function parseDate(value) {
     const hour = Number(m[4] || 0);
     const minute = Number(m[5] || 0);
     const second = Number(m[6] || 0);
+
     const d = new Date(year, month - 1, day, hour, minute, second, 0);
 
     if (
       d.getFullYear() === year &&
       d.getMonth() === month - 1 &&
       d.getDate() === day
-    ) return d;
-
+    ) {
+      return d;
+    }
     return null;
   }
 
-  // Google Sheet hiện tại có một phần dữ liệu bị locale en_US đảo DD/MM.
-  // Với chuỗi a/b/yyyy, tạo CẢ HAI cách hiểu:
-  //   A = dd/MM/yyyy
-  //   B = MM/dd/yyyy
-  // Sau đó chọn ngày hợp lý nhất so với ngày hiện tại.
+  // KiotViet text chuẩn: dd/MM/yyyy [HH:mm[:ss]]
   m = s.match(
     /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
 
   if (m) {
-    const a = Number(m[1]);
-    const b = Number(m[2]);
+    const day = Number(m[1]);
+    const month = Number(m[2]);
     const year = Number(m[3]);
     const hour = Number(m[4] || 0);
     const minute = Number(m[5] || 0);
     const second = Number(m[6] || 0);
 
-    const makeValid = (day, month) => {
-      if (
-        !Number.isInteger(day) || !Number.isInteger(month) ||
-        month < 1 || month > 12 || day < 1 || day > 31
-      ) return null;
+    const d = new Date(year, month - 1, day, hour, minute, second, 0);
 
-      const d = new Date(year, month - 1, day, hour, minute, second, 0);
-
-      if (
-        d.getFullYear() === year &&
-        d.getMonth() === month - 1 &&
-        d.getDate() === day
-      ) return d;
-
-      return null;
-    };
-
-    const ddmm = makeValid(a, b);
-    const mmdd = makeValid(b, a);
-
-    if (ddmm && !mmdd) return ddmm;
-    if (!ddmm && mmdd) return mmdd;
-    if (!ddmm && !mmdd) return null;
-
-    // Nếu cả hai đều hợp lệ (01..12 / 01..12), chọn candidate gần "hôm nay" hơn.
-    // Đây xử lý đúng dữ liệu hiện tại kiểu:
-    //   08/01/2026 -> 01/08/2026
-    //   08/09/2026 -> 09/08/2026 (vì 08/09 còn ở tương lai)
-    // nhưng vẫn giữ 01/09/2026 là 01/09/2026.
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    const score = (d) => {
-      const diffDays = Math.round((d - today) / 86400000);
-
-      // Dashboard là dữ liệu gần hiện tại.
-      // Future > 1 ngày bị phạt rất mạnh.
-      if (diffDays > 1) return 100000 + diffDays;
-
-      return Math.abs(diffDays);
-    };
-
-    return score(ddmm) <= score(mmdd) ? ddmm : mmdd;
+    if (
+      d.getFullYear() === year &&
+      d.getMonth() === month - 1 &&
+      d.getDate() === day
+    ) {
+      return d;
+    }
+    return null;
   }
 
   // Không dùng new Date(text) cho chuỗi mơ hồ.
@@ -531,35 +497,35 @@ function localDateKey(value) {
 function invoiceDate(row) {
   if (!row) return null;
 
-  // Ưu tiên AV "Ngày" - hiện đang là ISO yyyy-MM-dd
+  // NGUỒN CHUẨN: AV "Ngày" do Python/Google Sheet chuẩn hóa thành yyyy-MM-dd.
   const av = String(row["Ngày"] || "").trim();
 
-  if (av) {
-    const m = av.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let m = av.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 
-    if (m) {
-      const year = Number(m[1]);
-      const month = Number(m[2]);
-      const day = Number(m[3]);
+  if (m) {
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
 
-      return new Date(year, month - 1, day);
+    const d = new Date(year, month - 1, day);
+
+    if (
+      d.getFullYear() === year &&
+      d.getMonth() === month - 1 &&
+      d.getDate() === day
+    ) {
+      return d;
     }
   }
 
-  // Fallback sang D "Thời gian(Giờ đi)" dạng ISO yyyy-MM-dd HH:mm:ss
-  const dRaw = String(row["Thời gian(Giờ đi)"] || "").trim();
+  // FALLBACK CHỈ KHI AV TRỐNG/LỖI:
+  // D "Thời gian(Giờ đi)" có thể là numeric date, ISO text hoặc dd/MM/yyyy text.
+  const rawD = row["Thời gian(Giờ đi)"];
+  const d = parseDate(rawD);
 
-  const m = dRaw.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/
-  );
+  if (!d) return null;
 
-  if (!m) return null;
-
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-
-  return new Date(year, month - 1, day);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 function daysAgo(d, now = new Date()) {
