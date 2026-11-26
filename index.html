@@ -1783,7 +1783,10 @@ function App() {
       d.setDate(d.getDate() - i);
       dates.push(fmtLocalDate(d));
     }
-    const todayDate = dates[dates.length - 1];
+    // Job tồn kho trên GitHub hay chạy trễ vài tiếng -> sáng sớm chưa có dữ liệu "hôm nay".
+    // Lấy NGÀY MỚI NHẤT CÓ DỮ LIỆU trong 10 ngày (cả 3 sân cùng 1 ngày), thay vì ép đúng hôm nay -> 0đ.
+    const historyDates = new Set(data.tonkhoHistory.map((r) => String(r["Ngày"] || "").trim().slice(0, 10)));
+    const todayDate = [...dates].reverse().find((d) => historyDates.has(d)) || dates[dates.length - 1];
 
     const rowMap = {};
     data.tonkhoHistory.forEach((row) => {
@@ -1829,7 +1832,7 @@ function App() {
       const firstDate = availableBeforeOrToday[0] || null;
       const firstValue = firstDate ? Number(r.byDate[firstDate] || 0) : 0;
 
-      // CHỈ lấy đúng hôm nay cho các chỉ số hiện tại. Không tự lấy ngày gần nhất trước đó.
+      // Chỉ số hiện tại lấy theo todayDate = ngày mới nhất có dữ liệu.
       const hasToday = r.byDate[todayDate] !== undefined;
       const latestValue = hasToday ? Number(r.byDate[todayDate] || 0) : 0;
       const latestCost = hasToday ? Number(r.costByDate[todayDate] || 0) : 0;
@@ -4246,7 +4249,7 @@ function StockValueTrendTab({ trend, configList, configFromSheet, configStatus, 
 
       <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
         <div style={{ fontSize: 13, color: "#5c5644" }}>
-          <b>Tồn và giá vốn</b> vẫn hiển thị cho mọi mã. Chỉ mã <b>Yes</b> được tính Giá Trị Tồn, tỷ lệ và tổng; mã <b>No</b> vẫn hiện nhưng không cộng giá trị. Chỉ số hiện tại lấy đúng ngày hôm nay.
+          <b>Tồn và giá vốn</b> vẫn hiển thị cho mọi mã. Chỉ mã <b>Yes</b> được tính Giá Trị Tồn, tỷ lệ và tổng; mã <b>No</b> vẫn hiện nhưng không cộng giá trị. Chỉ số hiện tại lấy theo ngày mới nhất có dữ liệu tồn kho.
         </div>
       </div>
 
