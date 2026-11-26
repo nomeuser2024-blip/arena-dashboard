@@ -4137,9 +4137,12 @@ function StockValueTrendTab({ trend, configList, configFromSheet, configStatus, 
     });
 
   // Tổng theo từng ngày phải bám theo bộ lọc chi nhánh/search đang chọn.
+  // Ngày chưa có dữ liệu tồn (VD: job sáng nay chưa chạy) -> total = null, hiện "—" thay vì 0đ.
   const dailyTotals = trend.dates.map((date, i) => ({
     date,
-    total: rows.reduce((sum, r) => sum + Math.max(0, Number(r.values[i] || 0)), 0),
+    total: rows.some((r) => r.values[i] != null)
+      ? rows.reduce((sum, r) => sum + Math.max(0, Number(r.values[i] || 0)), 0)
+      : null,
   }));
 
   const totalValue = rows.reduce((sum, r) => sum + Math.max(0, r.latestValue), 0);
@@ -4225,7 +4228,7 @@ function StockValueTrendTab({ trend, configList, configFromSheet, configStatus, 
         <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2">
           {dailyTotals.map((d, i) => {
             const prev = i > 0 ? dailyTotals[i - 1].total : null;
-            const change = prev == null ? null : d.total - prev;
+            const change = prev == null || d.total == null ? null : d.total - prev;
             const isToday = d.date === trend.todayDate;
             return (
               <div
@@ -4237,7 +4240,7 @@ function StockValueTrendTab({ trend, configList, configFromSheet, configStatus, 
                 }}
               >
                 <div style={{ fontSize: 11, color: "#8a8272", fontWeight: 600 }}>{fmtDateShort(d.date)}</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.court }}>{fmtVND(d.total)}đ</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.court }}>{d.total == null ? "—" : `${fmtVND(d.total)}đ`}</div>
                 <div style={{ fontSize: 10, color: change > 0 ? C.danger : change < 0 ? C.ok : "#8a8272" }}>
                   {change == null ? "—" : `${change > 0 ? "+" : ""}${fmtVND(change)}đ`}
                 </div>
